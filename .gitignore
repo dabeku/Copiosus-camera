@@ -1,0 +1,3 @@
+*.o
+cop_sender
+.vscode
