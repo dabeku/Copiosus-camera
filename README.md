@@ -12,6 +12,11 @@ The idea is simple:
 3. Copiosus triggers a CONNECT command
 4. Send video and audio stream to Copiosus
 
+## Instructions
+
+make
+./cop_sender
+
 ## Test Case
 
 Copiosus: Mac
