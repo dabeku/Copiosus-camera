@@ -611,6 +611,8 @@ void sender_stop() {
 
     SDL_DetachThread(audio_thread);
 
+    cop_debug("[sender_stop] Write trailer.");
+
     /* Write the trailer, if any. The trailer must be written before you
      * close the CodecContexts open when you wrote the header; otherwise
      * av_write_trailer() may try to use memory that was freed on
@@ -618,17 +620,25 @@ void sender_stop() {
     av_write_trailer(outputContext);
 
     if (have_video) {
+        cop_debug("[sender_stop] Close video stream.");
         close_stream(outputContext, video_st);
     }
     if (have_audio) {
+        cop_debug("[sender_stop] Close audio stream.");
         close_stream(outputContext, audio_st);
     }
+
+    cop_debug("[sender_stop] Close avio.");
 
     //if (!(outputFormat->flags & AVFMT_NOFILE))
     avio_closep(&outputContext->pb);
 
+    cop_debug("[sender_stop] Free context.");
+
     /* free the stream */
     avformat_free_context(outputContext);
+
+    cop_debug("[sender_stop] Change state.");
 
     changeState(0);
 
