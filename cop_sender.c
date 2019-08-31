@@ -583,8 +583,11 @@ static int open_video(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AV
 }
 
 static void close_stream(AVFormatContext *oc, OutputStream *ost) {
+    cop_debug("[close_stream].");
     avcodec_free_context(&ost->enc);
+    cop_debug("[close_stream] Calling av_frame_free().");
     av_frame_free(&ost->frame);
+    cop_debug("[close_stream] Calling sws_freeContext().");
     sws_freeContext(ost->sws_ctx);
 }
 
