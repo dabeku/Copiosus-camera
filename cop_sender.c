@@ -612,6 +612,7 @@ void sender_stop() {
 
     cop_debug("[sender_stop] Audio and video is idle.");
 
+    SDL_DetachThread(video_thread);
     SDL_DetachThread(audio_thread);
 
     cop_debug("[sender_stop] Write trailer.");
