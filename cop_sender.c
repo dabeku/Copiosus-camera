@@ -96,7 +96,7 @@ typedef struct OutputStream {
 
     AVFrame *frame;
 
-    struct SwsContext *sws_ctx;
+    //struct SwsContext *sws_ctx;
 } OutputStream;
 
 typedef struct Container {
@@ -583,12 +583,12 @@ static int open_video(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AV
 }
 
 static void close_stream(AVFormatContext *oc, OutputStream *ost) {
-    cop_debug("[close_stream].");
+    cop_debug("[close_stream] %p.", &ost->enc);
     avcodec_free_context(&ost->enc);
-    cop_debug("[close_stream] Calling av_frame_free().");
+    cop_debug("[close_stream] Calling av_frame_free(): %p.", &ost->frame);
     av_frame_free(&ost->frame);
-    cop_debug("[close_stream] Calling sws_freeContext().");
-    sws_freeContext(ost->sws_ctx);
+    //cop_debug("[close_stream] Calling sws_freeContext(): %p.", ost->sws_ctx);
+    //sws_freeContext(ost->sws_ctx);
 }
 
 void sender_stop() {
@@ -612,8 +612,15 @@ void sender_stop() {
 
     cop_debug("[sender_stop] Audio and video is idle.");
 
-    SDL_DetachThread(video_thread);
-    SDL_DetachThread(audio_thread);
+    int threadReturnValue;
+
+    SDL_WaitThread(video_thread, &threadReturnValue);
+    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
+    SDL_WaitThread(audio_thread, &threadReturnValue);
+    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
+
+    //SDL_DetachThread(video_thread);
+    //SDL_DetachThread(audio_thread);
 
     cop_debug("[sender_stop] Write trailer.");
 
