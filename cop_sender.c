@@ -1064,7 +1064,7 @@ int main(int argc, char* argv[]) {
     cop_debug("[main] Arguments: %s %s.", platform, cmd);
 
     if (equals(cmd, "list")) {
-        list_devices("mac");
+        list_devices(platform);
         return STATUS_CODE_OK;
     }
 
