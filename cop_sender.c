@@ -614,13 +614,15 @@ void sender_stop() {
 
     int threadReturnValue;
 
-    SDL_WaitThread(video_thread, &threadReturnValue);
+    /*SDL_WaitThread(video_thread, &threadReturnValue);
     cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
     SDL_WaitThread(audio_thread, &threadReturnValue);
-    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
+    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);*/
 
-    //SDL_DetachThread(video_thread);
-    //SDL_DetachThread(audio_thread);
+    cop_debug("[sender_stop] Detach video thread");
+    SDL_DetachThread(video_thread);
+    cop_debug("[sender_stop] Detach audio thread");
+    SDL_DetachThread(audio_thread);
 
     cop_debug("[sender_stop] Write trailer.");
 
