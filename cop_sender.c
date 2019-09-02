@@ -470,8 +470,25 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost) {
     return (frame || got_packet) ? 0 : 1;
 }
 
+static int fps = 0;
+
+static void logStats() {
+    cop_debug("[logStats] FPS: %d", fps);
+    fps = 0;
+}
+
+Uint32 periodic_cb(Uint32 interval, void *param) {
+    logStats();
+    return(interval);
+}
+
+
+
+
 static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     
+    fps++;
+
     int ret;
     AVCodecContext *c;
     AVFrame *frame = NULL;
@@ -1110,13 +1127,15 @@ int main(int argc, char* argv[]) {
         cop_debug("[main] Setup audio: Done");
     }
 
+    SDL_AddTimer(1000, periodic_cb, NULL);
+
     // Test without UDP commands
-    //return sender_initialize("udp://127.0.0.1:1234", 640, 480, 30);
+    sender_initialize("udp://192.168.0.24:1234", 640, 480, 30);
     
-    signal(SIGINT, intHandler);
+    /*signal(SIGINT, intHandler);
 
     SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
-    SDL_CreateThread(receive_command, "receive_command", NULL);
+    SDL_CreateThread(receive_command, "receive_command", NULL);*/
 
     while (quit == 0) {
         cop_debug("[main] Waiting for quit signal. State: %d.", state);
