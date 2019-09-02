@@ -628,15 +628,15 @@ void sender_stop() {
 
     int threadReturnValue;
 
-    /*SDL_WaitThread(video_thread, &threadReturnValue);
+    SDL_WaitThread(video_thread, &threadReturnValue);
     cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
     SDL_WaitThread(audio_thread, &threadReturnValue);
-    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);*/
+    cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
 
-    cop_debug("[sender_stop] Detach video thread");
+    /*cop_debug("[sender_stop] Detach video thread");
     SDL_DetachThread(video_thread);
     cop_debug("[sender_stop] Detach audio thread");
-    SDL_DetachThread(audio_thread);
+    SDL_DetachThread(audio_thread);*/
 
     cop_debug("[sender_stop] Write trailer.");
 
@@ -757,8 +757,10 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     pCamInputFormat = av_find_input_format("avfoundation");
     av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(width), "x"), int_to_str(height)), 0);
     av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
-    if (avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt) != 0) {
-        cop_error("[sender_initialize] Camera: Can't open format.");
+    
+    ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
+    if (ret != 0) {
+        cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
         changeState(0);
         return STATUS_CODE_NOK;
     }
