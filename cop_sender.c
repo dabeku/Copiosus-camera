@@ -649,10 +649,13 @@ void sender_stop() {
     if (have_video) {
         cop_debug("[sender_stop] Close video stream.");
         close_stream(outputContext, video_st);
+        avformat_close_input(&pCamFormatCtx);
     }
     if (have_audio) {
         cop_debug("[sender_stop] Close audio stream.");
         close_stream(outputContext, audio_st);
+        // Attention: We may not close the mic context since it's started in main()
+        //avformat_close_input(&pMicFormatCtx);
     }
 
     cop_debug("[sender_stop] Close avio.");
@@ -757,13 +760,14 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     pCamInputFormat = av_find_input_format("avfoundation");
     av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(width), "x"), int_to_str(height)), 0);
     av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
-    
+
     ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
     if (ret != 0) {
         cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
         changeState(0);
         return STATUS_CODE_NOK;
     }
+
     if (avformat_find_stream_info(pCamFormatCtx, NULL) < 0) {
         cop_error("[sender_initialize] Camera: Can't find stream information.");
         changeState(0);
