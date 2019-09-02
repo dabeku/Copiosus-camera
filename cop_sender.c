@@ -482,12 +482,9 @@ Uint32 periodic_cb(Uint32 interval, void *param) {
     return(interval);
 }
 
-
-
-
 static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     
-    fps++;
+    fps++; 
 
     int ret;
     AVCodecContext *c;
@@ -956,7 +953,7 @@ static int receive_command(void* arg) {
                 char* url = concat("udp://", command_data->ip);
                 url = concat(url, ":");
                 url = concat(url, int_to_str(command_data->port));
-                sender_initialize(url, 640, 480, 30);
+                sender_initialize(url, 640, 480, 10);
             } else if (equals(command_data->cmd, "DISCONNECT")) {
                 cop_debug("Do disconnect");
                 sender_stop();
@@ -1130,12 +1127,12 @@ int main(int argc, char* argv[]) {
     SDL_AddTimer(1000, periodic_cb, NULL);
 
     // Test without UDP commands
-    sender_initialize("udp://192.168.0.24:1234", 640, 480, 30);
+    //sender_initialize("udp://192.168.0.24:1234", 640, 480, 10);
     
-    /*signal(SIGINT, intHandler);
+    signal(SIGINT, intHandler);
 
     SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
-    SDL_CreateThread(receive_command, "receive_command", NULL);*/
+    SDL_CreateThread(receive_command, "receive_command", NULL);
 
     while (quit == 0) {
         cop_debug("[main] Waiting for quit signal. State: %d.", state);
