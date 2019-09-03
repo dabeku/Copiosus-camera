@@ -30,6 +30,14 @@ List connected devices:
 * Mac: ```ffmpeg -f avfoundation -list_devices true -i ""```
 * Linux: ```v4l2-ctl --list-devices```
 
+## Run when starting
+
+```vim /etc/rc.local```
+
+Add the following line before exit 0:
+
+```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 > /home/pi/Documents/log.txt &```
+
 ## Test Case
 
 Copiosus: Mac
