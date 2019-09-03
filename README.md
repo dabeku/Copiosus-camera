@@ -32,11 +32,26 @@ List connected devices:
 
 ## Run when starting
 
-```vim /etc/rc.local```
+```sudo vim /etc/rc.local```
 
 Add the following line before exit 0:
 
 ```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 > /home/pi/Documents/log.txt &```
+
+## Disable all LEDs
+
+```sudo vim /boot/config.txt```
+
+Add the following lines at the end of the file:
+
+```
+disable_camera_led=1
+dtparam=act_led_trigger=none
+dtparam=act_led_activelow=off
+dtparam=pwr_led_trigger=none
+dtparam=pwr_led_activelow=off
+```
+
 
 ## Test Case
 
