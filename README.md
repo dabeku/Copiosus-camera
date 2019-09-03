@@ -22,6 +22,14 @@ The idea is simple:
 
 ```./cop_sender -platform=linux -cmd=start -cam=/dev/video0```
 
+## Commands
+
+List connected devices:
+
+* Windows: ffmpeg -list_devices true -f dshow -i dummy
+* Mac: ffmpeg -f avfoundation -list_devices true -i ""
+* Linux: v4l2-ctl --list-devices
+
 ## Test Case
 
 Copiosus: Mac
