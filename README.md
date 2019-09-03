@@ -17,6 +17,10 @@ The idea is simple:
 make
 ./cop_sender
 
+## Run
+
+./cop_sender -platform=linux -cmd=start -cam=/dev/video0
+
 ## Test Case
 
 Copiosus: Mac
