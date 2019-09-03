@@ -26,9 +26,9 @@ The idea is simple:
 
 List connected devices:
 
-* Windows: ffmpeg -list_devices true -f dshow -i dummy
-* Mac: ffmpeg -f avfoundation -list_devices true -i ""
-* Linux: v4l2-ctl --list-devices
+* Windows: ```ffmpeg -list_devices true -f dshow -i dummy```
+* Mac: ```ffmpeg -f avfoundation -list_devices true -i ""```
+* Linux: ```v4l2-ctl --list-devices```
 
 ## Test Case
 
