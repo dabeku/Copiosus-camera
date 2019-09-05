@@ -23,7 +23,7 @@ static int receive_udp_broadcast_socket = -1;
 static int proxy_send_udp_socket = -1;
 static int proxy_receive_udp_socket = -1;
 static struct sockaddr_in dest_addr;
-static bool isProxyRunning = true;
+static bool isProxyRunning = false;
 
 broadcast_data* network_receive_udp_broadcast(int port) {
     cop_debug("[network_receive_udp_broadcast].");
@@ -171,14 +171,12 @@ void proxy_close() {
     } else {
         close(proxy_send_udp_socket);
     }
-
     if (proxy_receive_udp_socket < 0) {
         cop_error("[proxy_close] Socket receive not open: %d.", proxy_receive_udp_socket);
     } else {
         close(proxy_receive_udp_socket);
     }
     isProxyRunning = false;
-    
 }
 
 void proxy_init(const char* dest_ip, int dest_port) {
@@ -203,49 +201,12 @@ void proxy_send_udp(const char* data) {
     if (proxy_send_udp_socket < 0) {
         cop_error("[proxy_send_udp] Socket not available: %d", proxy_send_udp_socket);
     }
-
-    /*int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s < 0) {
-        cop_error("[proxy_send_udp] Could not create socket: %d.", s);
-        // TODO: Remove thisproxy_init
-        exit(-1);
-    }
-    
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr("192.168.0.24");
-    addr.sin_port = htons(1234);*/
-    
     cop_debug("[proxy_send_udp] Send data.");
-    
 
     int result = sendto(proxy_send_udp_socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (result < 0) {
         cop_error("[proxy_send_udp] Could not send data. Result: %d.", result);
-        /*close(s);
-        // TODO: Remove this
-        exit(-1);*/
     }
-    //close(s);
-
-    /*int sizeLeftToSend = PROXY_SEND_BUFFER_SIZE_BYTES;
-    for (int i = 0; i < PROXY_SEND_BUFFER_SIZE_BYTES; i+=PROXY_SEND_BUFFER_SIZE_BYTES) {
-        
-        int buffSizeToSend = PROXY_SEND_BUFFER_SIZE_BYTES;
-        if (sizeLeftToSend < PROXY_SEND_BUFFER_SIZE_BYTES) {
-            buffSizeToSend = sizeLeftToSend;
-        }
-        cop_debug("[network_send_udp] Send: %d bytes to %s:%d", buffSizeToSend, "192.168.0.15", 1234);
-        data = data + i;
-        
-        int result = sendto(s, data, buffSizeToSend, 0, (struct sockaddr *)&addr, sizeof(addr));
-        if (result < 0) {
-            cop_error("[network_send_udp] Could not send data. Result: %d.", result);
-            // TODO: Remove this
-            exit(-1);
-        }
-        sizeLeftToSend -= BUFFER_SIZE;
-    }*/
 }
 
 int proxy_receive_udp(void* arg) {
@@ -278,7 +239,6 @@ int proxy_receive_udp(void* arg) {
     memset(buffer, '\0', PROXY_BUFFER_SIZE_BYTES);
     unsigned slen=sizeof(addr);
 
-    int read = 0;
     while (isProxyRunning) {
         int read = recvfrom(proxy_receive_udp_socket, buffer, PROXY_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&si_other, &slen);
         cop_debug("[proxy_receive_udp] Received: %d - %d.", read, sendIndex);
@@ -289,36 +249,17 @@ int proxy_receive_udp(void* arg) {
         }
 
         if (sendIndex + read < PROXY_SEND_BUFFER_SIZE_BYTES) {
-            //cop_debug("[proxy_receive_udp] Not filled");
             // Buffer won't be filled
-            // TODO: Copy read bytes from buffer to sendBuffer[sendIndex]
             memcpy(&sendBuffer[sendIndex], buffer, read);
             sendIndex += read;
         } else {
-            //cop_debug("[proxy_receive_udp] Filled: %d size: %d to 512.", sendIndex, PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
-            //cop_debug("[proxy_receive_udp] Filled: From 0: %d", read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex));
             // Buffer is filled
-            // TODO: Copy PROXY_MAX_PACKET_SIZE_BYTES - sendIndex bytes from buffer to sendBuffer[sendIndex]
             memcpy(&sendBuffer[sendIndex], buffer, PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
-            // TODO: Send buffer
             proxy_send_udp(sendBuffer);
-            // TODO: Copy buffer from read - (PROXY_MAX_PACKET_SIZE_BYTES - sendIndex)
             memcpy(sendBuffer, &buffer[PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex], read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex));
             sendIndex = read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
         }
-
-        /*for (int i = 0; i < read; i++) {
-            sendBuffer[sendIndex] = buffer[i];
-            if (sendIndex == PROXY_SEND_BUFFER_SIZE_BYTES - 1) {
-                proxy_send_udp(sendBuffer);
-                sendIndex = 0;
-            } else {
-                sendIndex++;
-            }
-        }*/
     }
-
-    //close(receive_udp_socket);
 
     cop_debug("[proxy_receive_udp].");
 
