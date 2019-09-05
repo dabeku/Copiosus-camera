@@ -14,8 +14,48 @@ The idea is simple:
 
 ## Instructions
 
-make
-./cop_sender
+```make```
+
+```./cop_sender```
+
+## Run
+
+```./cop_sender -platform=linux -cmd=start -cam=/dev/video0```
+
+## Commands
+
+List connected devices:
+
+* Windows: ```ffmpeg -list_devices true -f dshow -i dummy```
+* Mac: ```ffmpeg -f avfoundation -list_devices true -i ""```
+* Linux: ```v4l2-ctl --list-devices```
+
+## Run when starting
+
+```sudo vim /etc/rc.local```
+
+Add the following line before exit 0:
+
+```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 > /home/pi/Documents/log.txt &```
+
+## Disable all LEDs
+
+```sudo vim /boot/config.txt```
+
+Add the following line at the end of the file:
+
+```
+disable_camera_led=1
+```
+
+```sudo vim /etc/rc.local```
+
+Add the following line before exit 0:
+
+```
+sudo sh -c 'echo 0 > /sys/class/leds/led0/brightness'
+sudo sh -c 'echo 0 > /sys/class/leds/led1/brightness'
+```
 
 ## Test Case
 
