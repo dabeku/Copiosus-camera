@@ -31,13 +31,14 @@
 #include "cop_utility.h"
 
 #define USE_PROXY 1
-#define TEST_LOCAL 1
+#define TEST_LOCAL 0
 
 #define CFG_WIDTH 640
 #define CFG_HEIGHT 480
 #define CFG_FRAME_RATE 10
 
 static const char* LOCALHOST_IP = "127.0.0.1";
+static const char* MPEG_TS_OPTIONS = "?pkt_size=1472";
 
 // A global quit flag: 0 = running, 1 = quit
 static int quit = 0;
@@ -968,13 +969,28 @@ static int receive_command(void* arg) {
             cop_debug("[receive_command] Received COMMAND: %s", command_data->cmd);
 
             if (equals(command_data->cmd, "CONNECT")) {
-                proxy_init("192.168.0.24", 1234);
-                SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
 
-                char* url = concat("udp://", command_data->ip);
-                url = concat(url, ":");
-                url = concat(url, int_to_str(command_data->port));
-                sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+                if (USE_PROXY) {
+                    proxy_init(command_data->ip, command_data->port);
+                    SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+
+                    sender_initialize(
+                        concat(
+                            concat(
+                                concat("udp://", LOCALHOST_IP),
+                                concat(":", int_to_str(PORT_PROXY_LISTEN))
+                            ),
+                            MPEG_TS_OPTIONS
+                        ),
+                        CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE
+                    );
+                } else {
+                    char* url = concat("udp://", command_data->ip);
+                    url = concat(url, ":");
+                    url = concat(url, int_to_str(command_data->port));
+                    url = concat(url, MPEG_TS_OPTIONS);
+                    sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+                }
             } else if (equals(command_data->cmd, "DISCONNECT")) {
                 cop_debug("Do disconnect");
                 sender_stop();
@@ -1167,11 +1183,14 @@ int main(int argc, char* argv[]) {
                         concat("udp://", LOCALHOST_IP),
                         concat(":", int_to_str(PORT_PROXY_LISTEN))
                     ),
-                    "?pkt_size=1472"
+                    MPEG_TS_OPTIONS
                 )
                 , CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
         } else {
-            sender_initialize("udp://192.168.0.24:1234?pkt_size=1472", CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+            sender_initialize(
+                concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS),
+                CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE
+            );
         }
     } else {
         SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);

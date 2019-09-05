@@ -167,14 +167,22 @@ void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_d
 
 void proxy_close() {
     if (proxy_send_udp_socket < 0) {
-        cop_error("[proxy_close] Socket not open: %d.", proxy_send_udp_socket);
-        return;
+        cop_error("[proxy_close] Socket send not open: %d.", proxy_send_udp_socket);
+    } else {
+        close(proxy_send_udp_socket);
+    }
+
+    if (proxy_receive_udp_socket < 0) {
+        cop_error("[proxy_close] Socket receive not open: %d.", proxy_receive_udp_socket);
+    } else {
+        close(proxy_receive_udp_socket);
     }
     isProxyRunning = false;
-    close(proxy_send_udp_socket);
+    
 }
 
 void proxy_init(const char* dest_ip, int dest_port) {
+    cop_debug("[proxy_init].");
     proxy_send_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (proxy_send_udp_socket < 0) {
         cop_error("[proxy_init] Could not create socket: %d.", proxy_send_udp_socket);
@@ -185,6 +193,8 @@ void proxy_init(const char* dest_ip, int dest_port) {
     dest_addr.sin_port = htons(dest_port);
 
     isProxyRunning = true;
+
+    cop_debug("[proxy_init] Done.");
 }
 
 void proxy_send_udp(const char* data) {
@@ -197,7 +207,7 @@ void proxy_send_udp(const char* data) {
     /*int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (s < 0) {
         cop_error("[proxy_send_udp] Could not create socket: %d.", s);
-        // TODO: Remove this
+        // TODO: Remove thisproxy_init
         exit(-1);
     }
     
