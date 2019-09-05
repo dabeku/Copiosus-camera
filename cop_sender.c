@@ -30,6 +30,15 @@
 #include "cop_status_code.h"
 #include "cop_utility.h"
 
+#define USE_PROXY 1
+#define TEST_LOCAL 1
+
+#define CFG_WIDTH 640
+#define CFG_HEIGHT 480
+#define CFG_FRAME_RATE 10
+
+static const char* LOCALHOST_IP = "127.0.0.1";
+
 // A global quit flag: 0 = running, 1 = quit
 static int quit = 0;
 static int isAudioQuit = 1;
@@ -114,6 +123,7 @@ int have_audio = 0;
 
 void intHandler(int dummy) {
     cop_debug("[intHandler] Closing app.");
+    proxy_close();
     quit = 1;
 }
 
@@ -613,6 +623,8 @@ void sender_stop() {
     isAudioQuit = 1;
     isVideoQuit = 1;
 
+    proxy_close();
+
     if (outputContext == NULL) {
         cop_debug("[sender_stop] Output context not set. Do nothing.");
         changeState(0);
@@ -956,10 +968,13 @@ static int receive_command(void* arg) {
             cop_debug("[receive_command] Received COMMAND: %s", command_data->cmd);
 
             if (equals(command_data->cmd, "CONNECT")) {
+                proxy_init("192.168.0.24", 1234);
+                SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+
                 char* url = concat("udp://", command_data->ip);
                 url = concat(url, ":");
                 url = concat(url, int_to_str(command_data->port));
-                sender_initialize(url, 640, 480, 10);
+                sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
             } else if (equals(command_data->cmd, "DISCONNECT")) {
                 cop_debug("Do disconnect");
                 sender_stop();
@@ -1132,13 +1147,36 @@ int main(int argc, char* argv[]) {
 
     SDL_AddTimer(1000, periodic_cb, NULL);
 
-    // Test without UDP commands
-    //sender_initialize("udp://192.168.0.24:1234", 640, 480, 10);
-    
     signal(SIGINT, intHandler);
 
-    SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
-    SDL_CreateThread(receive_command, "receive_command", NULL);
+    if (TEST_LOCAL) {
+        if (USE_PROXY) {
+            proxy_init("192.168.0.24", 1234);
+            SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+
+            // Test without UDP commands
+            //sender_initialize("udp://192.168.0.24:1234", 640, 480, 10);
+            // Packet size is 1472 by default which is the limit for VPN packets
+            // If this makes problem you can set the pkt_size url parameter like
+            // in this example: "udp://192.168.0.24:1235?pkt_size=1472"
+            //sender_initialize("udp://192.168.0.24:1235", 640, 480, 10);
+            //sender_initialize(concat("udp://127.0.0.1:", int_to_str(PORT_PROXY_LISTEN)), CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+            sender_initialize(
+                concat(
+                    concat(
+                        concat("udp://", LOCALHOST_IP),
+                        concat(":", int_to_str(PORT_PROXY_LISTEN))
+                    ),
+                    "?pkt_size=1472"
+                )
+                , CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+        } else {
+            sender_initialize("udp://192.168.0.24:1234?pkt_size=1472", CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+        }
+    } else {
+        SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
+        SDL_CreateThread(receive_command, "receive_command", NULL);  
+    }
 
     while (quit == 0) {
         cop_debug("[main] Waiting for quit signal. State: %d.", state);
