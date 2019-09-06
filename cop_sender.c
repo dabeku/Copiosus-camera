@@ -632,7 +632,7 @@ void sender_stop() {
         return;
     }
 
-    while (isAudioProcessing == 1 && isVideoProcessing == 1) {
+    while (isAudioProcessing == 1 || isVideoProcessing == 1) {
         cop_debug("[sender_stop] Wait until audio and video finished processing.");
         sleep(1);
     }
