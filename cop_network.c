@@ -196,12 +196,12 @@ void proxy_init(const char* dest_ip, int dest_port) {
 }
 
 void proxy_send_udp(const char* data) {
-    cop_debug("[proxy_send_udp].");
+    //cop_debug("[proxy_send_udp].");
 
     if (proxy_send_udp_socket < 0) {
         cop_error("[proxy_send_udp] Socket not available: %d", proxy_send_udp_socket);
     }
-    cop_debug("[proxy_send_udp] Send data.");
+    //cop_debug("[proxy_send_udp] Send data.");
 
     int result = sendto(proxy_send_udp_socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
     if (result < 0) {
@@ -211,7 +211,7 @@ void proxy_send_udp(const char* data) {
 
 int proxy_receive_udp(void* arg) {
 
-    cop_debug("[proxy_receive_udp].");
+    //cop_debug("[proxy_receive_udp].");
 
     struct sockaddr_in addr, si_other;
     proxy_receive_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -241,7 +241,7 @@ int proxy_receive_udp(void* arg) {
 
     while (isProxyRunning) {
         int read = recvfrom(proxy_receive_udp_socket, buffer, PROXY_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&si_other, &slen);
-        cop_debug("[proxy_receive_udp] Received: %d - %d.", read, sendIndex);
+        //cop_debug("[proxy_receive_udp] Received: %d - %d.", read, sendIndex);
 
         if (read == -1) {
             cop_error("[proxy_receive_udp] Stop proxy.");
@@ -255,13 +255,19 @@ int proxy_receive_udp(void* arg) {
         } else {
             // Buffer is filled
             memcpy(&sendBuffer[sendIndex], buffer, PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
+
+            // TODO: Do encryption
+            /*for(int i = 0; i < PROXY_SEND_BUFFER_SIZE_BYTES; i++) {
+                sendBuffer[i] = sendBuffer[i] ^ i;
+            }*/
+
             proxy_send_udp(sendBuffer);
             memcpy(sendBuffer, &buffer[PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex], read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex));
             sendIndex = read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
         }
     }
 
-    cop_debug("[proxy_receive_udp].");
+    cop_debug("[proxy_receive_udp] Done.");
 
     return STATUS_CODE_OK;
 }

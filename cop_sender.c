@@ -285,7 +285,7 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
         c->pix_fmt       = AV_PIX_FMT_YUV420P;
         if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
             /* just for testing, we also add B-frames */
-            c->max_b_frames = 2;
+            c->max_b_frames = 1;
         }
         if (c->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
             /* Needed to avoid using macroblocks in which some coeffs overflow.
