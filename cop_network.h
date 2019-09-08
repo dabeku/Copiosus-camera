@@ -42,7 +42,7 @@ void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_d
 command_data* network_receive_udp(int listen_port);
 
 void proxy_close();
-void proxy_init(const char* dest_ip, int dest_port);
+void proxy_init(const char* dest_ip, int dest_port, const char* encryptionPwd);
 int proxy_receive_udp(void* arg);
 
 #endif /* scr_network_h */

@@ -67,7 +67,7 @@ SDL_Thread *audio_thread = NULL;
 SDL_Thread *video_thread = NULL;
 
 // Set by main() args
-char *pCamName = NULL;
+char* pCamName = NULL;
 AVFormatContext *pCamFormatCtx = NULL;
 AVInputFormat *pCamInputFormat = NULL;
 AVDictionary *pCamOpt = NULL;
@@ -80,7 +80,7 @@ struct SwsContext *pCamSwsContext = NULL;
 AVFrame *newpicture = NULL;
 
 // Set by main() args
-char *pMicName = NULL;
+char* pMicName = NULL;
 AVFormatContext *pMicFormatCtx = NULL;
 AVInputFormat *pMicInputFormat = NULL;
 AVDictionary *pMicOpt = NULL;
@@ -94,6 +94,9 @@ struct SwrContext *swr_ctx = NULL;
 uint8_t **src_data = NULL;
 int src_nb_samples = 512;
 AVFrame *final_frame = NULL;
+
+// Set by main() args
+static char* encryptionPwd = NULL;
 
 // a wrapper around a single output AVStream
 typedef struct OutputStream {
@@ -371,6 +374,8 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
     AVPacket micPacket = { 0 };
 
     while (isAudioQuit == 0) {
+        // TODO: Add interrupt like in node module (when changing network while cop_sender is running
+        // it will remain in state: 3)
         int ret = av_read_frame(pMicFormatCtx, &micPacket);
         if (micPacket.stream_index == camAudioStreamIndex) {
             int micFrameFinished = 0;
@@ -424,6 +429,8 @@ static AVFrame *get_video_frame(OutputStream *ost) {
     AVCodecContext *c = ost->enc;
     
     while (isVideoQuit == 0) {
+        // TODO: Add interrupt like in node module (when changing network while cop_sender is running
+        // it will remain in state: 3)
         int ret = av_read_frame(pCamFormatCtx, &camPacket);
         if (camPacket.stream_index == camVideoStreamIndex) {
             int camFrameFinished;
@@ -971,7 +978,7 @@ static int receive_command(void* arg) {
             if (equals(command_data->cmd, "CONNECT")) {
 
                 if (USE_PROXY) {
-                    proxy_init(command_data->ip, command_data->port);
+                    proxy_init(command_data->ip, command_data->port, encryptionPwd);
                     SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
 
                     sender_initialize(
@@ -1046,6 +1053,7 @@ void list_devices(char* platform) {
 /*
  * Usage: ./cop_sender -platform=mac|linux|win -cmd=start|list -cam=[name] -mic=[name]
  * ./cop_sender -platform=mac -cmd=list
+ * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone" -pwd="Fucking-Awesome"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera"
  * ./cop_sender -platform=mac -cmd=start -cam="Capture screen 0" -mic=":Built-in Microphone"
@@ -1061,11 +1069,13 @@ int main(int argc, char* argv[]) {
     char* cmd = NULL;
     char* cam = NULL;
     char* mic = NULL;
+    char* pwd = NULL;
 
     bool isPlatform = false;
     bool isCmd = false;
     bool isCam = false;
     bool isMic = false;
+    bool isPwd = false;
 
     for (int i = 1; i < argc; i++) {
         char* param = argv[i];
@@ -1104,6 +1114,14 @@ int main(int argc, char* argv[]) {
             if (equals(token, "-mic")) {
                 isMic = true;
             }
+
+            if (isPwd) {
+                pwd = token;
+                isPwd = false;
+            }
+            if (equals(token, "-pwd")) {
+                isPwd = true;
+            }
         }
     }
 
@@ -1131,6 +1149,14 @@ int main(int argc, char* argv[]) {
         cop_debug("[main] Ignoring audio.");    
     } else {
         cop_debug("[main] Audio: %s.", pMicName);
+    }
+
+    encryptionPwd = pwd;
+
+    if (encryptionPwd == NULL) {
+        cop_debug("[main] No password set.");    
+    } else {
+        cop_debug("[main] Encryption password set.");
     }
 
     changeState(0);
@@ -1167,7 +1193,7 @@ int main(int argc, char* argv[]) {
 
     if (TEST_LOCAL) {
         if (USE_PROXY) {
-            proxy_init("192.168.0.24", 1234);
+            proxy_init("192.168.0.24", 1234, encryptionPwd);
             SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
 
             // Test without UDP commands
