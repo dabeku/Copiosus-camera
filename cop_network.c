@@ -24,6 +24,8 @@ static int proxy_send_udp_socket = -1;
 static int proxy_receive_udp_socket = -1;
 static struct sockaddr_in dest_addr;
 static bool isProxyRunning = false;
+static FILE* video_file = NULL;
+static char* video_file_name = NULL;
 
 // Set by main() args
 static const char* encryptionPwd = NULL;
@@ -182,8 +184,15 @@ void proxy_close() {
     isProxyRunning = false;
 }
 
+void set_next_video_file() {
+    video_file_name = "video_";
+    video_file_name = concat(video_file_name, get_timestamp());
+    video_file_name = concat(video_file_name, ".ts");
+    video_file = fopen(video_file_name, "ab");
+}
+
 void proxy_init(const char* dest_ip, int dest_port, const char* pwd) {
-    cop_debug("[proxy_init].");
+    cop_debug("[proxy_init] %s %d.", dest_ip, dest_port);
     proxy_send_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (proxy_send_udp_socket < 0) {
         cop_error("[proxy_init] Could not create socket: %d.", proxy_send_udp_socket);
@@ -192,8 +201,8 @@ void proxy_init(const char* dest_ip, int dest_port, const char* pwd) {
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
     dest_addr.sin_port = htons(dest_port);
-
     encryptionPwd = pwd;
+    set_next_video_file();
 
     isProxyRunning = true;
 
@@ -261,6 +270,22 @@ int proxy_receive_udp(void* arg) {
             // Buffer is filled
             memcpy(&sendBuffer[sendIndex], buffer, PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
 
+            if (video_file != NULL) {
+                fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, video_file);
+                long availableMb = get_available_space_mb("/");
+                if (availableMb < 500) {
+                    // TODO: Do housekeeping
+                }
+                cop_debug("Available space: %lu Mb.", availableMb);
+
+                long size_in_kb = ftell(video_file) / 1024;
+                cop_debug("File size: %lu.", size_in_kb);
+                if (size_in_kb > 5000) {
+                    fclose(video_file);
+                    set_next_video_file();
+                }
+            }
+
             // Do encryption
             if (encryptionPwd != NULL) {
                 size_t pwd_length = strlen(encryptionPwd);
@@ -277,6 +302,12 @@ int proxy_receive_udp(void* arg) {
             sendIndex = read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
         }
     }
+
+    if (video_file != NULL) {
+        fclose(video_file);
+    }
+    video_file_name = NULL;
+    video_file = NULL;
 
     cop_debug("[proxy_receive_udp] Done.");
 

@@ -5,12 +5,12 @@ void cop_debug(const char* format, ...) {
 
     time_t rawtime;
     struct tm * timeinfo;
-    time ( &rawtime );
-    timeinfo = localtime ( &rawtime );
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
     char output[128];
     sprintf(
         output,
-        "[%d.%02d.%02d %02d:%02d:%02d]",
+        "[%02d.%02d.%04d %02d:%02d:%02d]",
         timeinfo->tm_mday,
         timeinfo->tm_mon + 1,
         timeinfo->tm_year + 1900,
@@ -33,12 +33,12 @@ void cop_error(const char* format, ...) {
 
     time_t rawtime;
     struct tm * timeinfo;
-    time ( &rawtime );
-    timeinfo = localtime ( &rawtime );
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
     char output[128];
     sprintf(
         output,
-        "[%d.%02d.%02d %02d:%02d:%02d]",
+        "[%02d.%02d.%04d %02d:%02d:%02d]",
         timeinfo->tm_mday,
         timeinfo->tm_mon + 1,
         timeinfo->tm_year + 1900,
@@ -54,6 +54,26 @@ void cop_error(const char* format, ...) {
     vfprintf(stdout, format, argptr);
     va_end(argptr);
     fflush(stdout);
+}
+
+char* get_timestamp() {
+    time_t rawtime;
+    struct tm * timeinfo;
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
+    char* buffer = malloc(sizeof(char) * 64);
+    memset(buffer, '\0', 64);
+    sprintf(
+        buffer,
+        "%02d-%02d-%04d_%02d-%02d-%02d",
+        timeinfo->tm_mday,
+        timeinfo->tm_mon + 1,
+        timeinfo->tm_year + 1900,
+        timeinfo->tm_hour,
+        timeinfo->tm_min,
+        timeinfo->tm_sec);
+
+    return buffer;
 }
 
 int decode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame) {
@@ -162,4 +182,27 @@ char* rand_str(size_t length) {
     }
 
     return randomString;
+}
+
+unsigned long get_available_space_mb(const char* path) {
+    struct statvfs stat;
+    if (statvfs(path, &stat) != 0) {
+        // Error happens, just quits here
+        return -1;
+    }
+
+    unsigned long available = stat.f_bavail * stat.f_frsize / 1024;
+    return available / 1024;
+}
+
+void house_keeping(char* path) {
+    struct dirent *entry;
+    DIR *dir = opendir(path);
+    if (dir == NULL) {
+        return;
+    }
+    while ((entry = readdir(dir)) != NULL) {
+        printf("%s\n",entry->d_name);
+    }
+    closedir(dir);
 }

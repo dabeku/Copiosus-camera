@@ -7,6 +7,8 @@
 #include <stdbool.h> // bool
 #include <string.h>
 #include <time.h>
+#include <sys/statvfs.h> // filesystem
+#include <dirent.h> // List files
 
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
@@ -25,12 +27,15 @@
 
 void cop_debug(const char* format, ...);
 void cop_error(const char* format, ...);
+char* get_timestamp();
 char* concat(const char *str1, const char *str2);
 int str_to_int(char* num);
 char* int_to_str(int num);
 bool equals(char* str1, char* str2);
 bool contains(char* str, char* find);
 char* rand_str(size_t length);
+unsigned long get_available_space_mb(const char* path);
+void house_keeping(char* path);
 
 int decode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame);
 int encode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame);

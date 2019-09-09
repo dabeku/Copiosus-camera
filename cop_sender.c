@@ -980,17 +980,11 @@ static int receive_command(void* arg) {
                 if (USE_PROXY) {
                     proxy_init(command_data->ip, command_data->port, encryptionPwd);
                     SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
-
-                    sender_initialize(
-                        concat(
-                            concat(
-                                concat("udp://", LOCALHOST_IP),
-                                concat(":", int_to_str(PORT_PROXY_LISTEN))
-                            ),
-                            MPEG_TS_OPTIONS
-                        ),
-                        CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE
-                    );
+                    char* url = concat("udp://", LOCALHOST_IP);
+                    url = concat(url, ":");
+                    url = concat(url, int_to_str(PORT_PROXY_LISTEN));
+                    url = concat(url, MPEG_TS_OPTIONS);
+                    sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
                 } else {
                     char* url = concat("udp://", command_data->ip);
                     url = concat(url, ":");
@@ -1220,7 +1214,19 @@ int main(int argc, char* argv[]) {
         }
     } else {
         SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
-        SDL_CreateThread(receive_command, "receive_command", NULL);  
+        SDL_CreateThread(receive_command, "receive_command", NULL);
+
+        // Store stream by using proxy when starting app
+
+        // TODO: Make port more reasonable
+        proxy_init(LOCALHOST_IP, 9999, encryptionPwd);
+        SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+        char* url = "udp://";
+        url = concat(url, LOCALHOST_IP);
+        url = concat(url, ":");
+        url = concat(url, int_to_str(PORT_PROXY_LISTEN));
+        url = concat(url, MPEG_TS_OPTIONS);
+        sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
     }
 
     while (quit == 0) {
