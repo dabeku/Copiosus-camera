@@ -276,7 +276,7 @@ int proxy_receive_udp(void* arg) {
                 //cop_debug("File size: %lu.", size_in_kb);
                 // Set max size to 250 mb
                 //if (size_in_kb > 1024 * 250) {
-                if (size_in_kb > 1024 * 20) {
+                if (size_in_kb > 1024 * 100) {
                     fclose(video_file);
                     set_next_video_file();
                 }

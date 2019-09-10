@@ -491,11 +491,12 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost) {
 static int fps = 0;
 
 static void logStats() {
-    cop_debug("[logStats] FPS: %d", fps);
+    long availableMb = get_available_space_mb("/");
+    
+    cop_debug("[logStats] FPS: %d. Available space: %lu", fps, availableMb);
     fps = 0;
 
-    long availableMb = get_available_space_mb("/");
-    if (availableMb < 500) {
+    if (availableMb < 300) {
         house_keeping(get_video_file_name());
     }
 }

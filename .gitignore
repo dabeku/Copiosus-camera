@@ -1,3 +1,4 @@
 *.o
 cop_sender
 .vscode
+video_*.ts
