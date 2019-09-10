@@ -493,12 +493,17 @@ static int fps = 0;
 static void logStats() {
     cop_debug("[logStats] FPS: %d", fps);
     fps = 0;
+
+    long availableMb = get_available_space_mb("/");
+    if (availableMb < 500) {
+        house_keeping(get_video_file_name());
+    }
 }
 
-Uint32 periodic_cb(Uint32 interval, void *param) {
+/*Uint32 periodic_cb(Uint32 interval, void *param) {
     logStats();
     return(interval);
-}
+}*/
 
 static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     
@@ -1181,7 +1186,7 @@ int main(int argc, char* argv[]) {
         cop_debug("[main] Setup audio: Done");
     }
 
-    SDL_AddTimer(1000, periodic_cb, NULL);
+    //SDL_AddTimer(1000, periodic_cb, NULL);
 
     signal(SIGINT, intHandler);
 
@@ -1231,6 +1236,7 @@ int main(int argc, char* argv[]) {
 
     while (quit == 0) {
         cop_debug("[main] Waiting for quit signal. State: %d.", state);
+        logStats();
         sleep(1);
     }
 

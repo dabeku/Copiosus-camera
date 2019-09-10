@@ -22,6 +22,8 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_thread.h>
 
+#include "cop_list.h"
+
 // A generic buffer size used for network and strings. Use whenever possible.
 #define BUFFER_SIZE 512
 
@@ -32,6 +34,7 @@ char* concat(const char *str1, const char *str2);
 int str_to_int(char* num);
 char* int_to_str(int num);
 bool equals(char* str1, char* str2);
+int compare(char* str1, char* str2);
 bool contains(char* str, char* find);
 char* rand_str(size_t length);
 unsigned long get_available_space_mb(const char* path);

@@ -1,7 +1,8 @@
 CC = gcc
 
 DEPS =  cop_status_code.h	\
-	cop_network.h
+	cop_network.h	\
+	cop_list.h
 
 # use pkg-config for getting CFLAGS and LDLIBS
 FFMPEG_LIBS=    libavdevice                        \
@@ -20,9 +21,10 @@ COPIOSUS = 	cop_sender
 
 OBJS = 		cop_sender.o	\
 		cop_network.o		\
-		cop_utility.o		
+		cop_utility.o		\
+		cop_list.o
 
-all: clean cop_utility.o cop_network.o cop_sender
+all: clean cop_utility.o cop_network.o cop_list.o cop_sender
 
 cop_utility.o: cop_utility.c cop_utility.h
 	$(CC) $(CFLAGS) -c cop_utility.c
@@ -30,8 +32,11 @@ cop_utility.o: cop_utility.c cop_utility.h
 cop_network.o: cop_network.c cop_network.h
 	$(CC) $(CFLAGS) -c cop_network.c
 
+cop_list.o: cop_list.c cop_list.h
+	$(CC) $(CFLAGS) -c cop_list.c
+
 cop_sender: cop_sender.o
-	gcc cop_sender.o cop_utility.o cop_network.o -o cop_sender $(CFLAGS) $(LDLIBS)
+	gcc cop_sender.o cop_utility.o cop_network.o cop_list.o -o cop_sender $(CFLAGS) $(LDLIBS)
 
 clean-test:
 	$(RM) test.*

@@ -272,15 +272,11 @@ int proxy_receive_udp(void* arg) {
 
             if (video_file != NULL) {
                 fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, video_file);
-                long availableMb = get_available_space_mb("/");
-                if (availableMb < 500) {
-                    // TODO: Do housekeeping
-                }
-                cop_debug("Available space: %lu Mb.", availableMb);
-
                 long size_in_kb = ftell(video_file) / 1024;
-                cop_debug("File size: %lu.", size_in_kb);
-                if (size_in_kb > 5000) {
+                //cop_debug("File size: %lu.", size_in_kb);
+                // Set max size to 250 mb
+                //if (size_in_kb > 1024 * 250) {
+                if (size_in_kb > 1024 * 20) {
                     fclose(video_file);
                     set_next_video_file();
                 }
@@ -312,4 +308,8 @@ int proxy_receive_udp(void* arg) {
     cop_debug("[proxy_receive_udp] Done.");
 
     return STATUS_CODE_OK;
+}
+
+char* get_video_file_name() {
+    return video_file_name;
 }

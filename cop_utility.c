@@ -148,12 +148,20 @@ char* concat(const char *str1, const char *str2) {
 }
 
 bool equals(char* str1, char* str2) {
+    if (str1 == NULL || str2 == NULL) {
+        return 0;
+    }
+    
     int ret = strncmp(str1, str2, BUFFER_SIZE);
 
     if (ret == 0) {
         return true;
     }
     return false;
+}
+
+int compare(char* str1, char* str2) {
+    return strncmp(str1, str2, BUFFER_SIZE);
 }
 
 bool contains(char* str, char* find) {
@@ -195,14 +203,39 @@ unsigned long get_available_space_mb(const char* path) {
     return available / 1024;
 }
 
-void house_keeping(char* path) {
+void house_keeping(char* current_file) {
+
+    if (current_file == NULL) {
+        return;
+    }
+
     struct dirent *entry;
-    DIR *dir = opendir(path);
+    DIR *dir = opendir("./");
     if (dir == NULL) {
         return;
     }
+
+    char* oldest_file = NULL;
+
     while ((entry = readdir(dir)) != NULL) {
-        printf("%s\n",entry->d_name);
+        if (contains(entry->d_name, "video_")) {
+            if (oldest_file == NULL) {
+                oldest_file = entry->d_name;
+            } else {
+                if (compare(oldest_file, entry->d_name) > 0) {
+                    oldest_file = entry->d_name;
+                }
+            }
+        }
     }
     closedir(dir);
+
+    if (equals(current_file, oldest_file)) {
+        // Do nothing since we won't delete the current file
+        return;
+    }
+
+    if (oldest_file != NULL) {
+        remove(oldest_file);
+    }
 }

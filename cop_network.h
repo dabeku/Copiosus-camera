@@ -44,5 +44,6 @@ command_data* network_receive_udp(int listen_port);
 void proxy_close();
 void proxy_init(const char* dest_ip, int dest_port, const char* encryptionPwd);
 int proxy_receive_udp(void* arg);
+char* get_video_file_name();
 
 #endif /* scr_network_h */
