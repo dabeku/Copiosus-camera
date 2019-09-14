@@ -131,6 +131,11 @@ void intHandler(int dummy) {
     quit = 1;
 }
 
+static int interrupt_cb(void *ctx) {
+    cop_debug("[interrupt_cb] Stop due to interrupt poll.");
+    return 0;
+}
+
 static void sendState(broadcast_data* broadcast_data) {
     if (state == 0) {
         const char* msg = concat("IDLE ", senderId);
@@ -421,6 +426,7 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
             }
         }
     }
+    cop_debug("[get_audio_frame] Done.");
     return NULL;
 }
 
@@ -455,6 +461,8 @@ static AVFrame *get_video_frame(OutputStream *ost) {
             }
         }
     }
+    // TODO: Check why this is not called when disconnecting client
+    cop_debug("[get_video_frame] Done.");
     return NULL;
 }
 
@@ -783,9 +791,14 @@ int sender_initialize(char* url, int width, int height, int framerate) {
      */
     cop_debug("[sender_initialize] Setup video.");
     pCamFormatCtx = avformat_alloc_context();
+    //pCamFormatCtx->interrupt_callback.callback = interrupt_cb;
+    //pCamFormatCtx->interrupt_callback.opaque = pCamFormatCtx;
+
     pCamInputFormat = av_find_input_format("avfoundation");
     av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(width), "x"), int_to_str(height)), 0);
     av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
+    //av_dict_set(&pCamOpt, "timeout", "5", 0); 
+    //av_dict_set(&pCamOpt, "stimeout", "5", 0); 
 
     ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
     if (ret != 0) {
@@ -935,6 +948,8 @@ int sender_initialize(char* url, int width, int height, int framerate) {
             changeState(0);
             return STATUS_CODE_NOK;
         }
+
+        cop_debug("[sender_initialize] Channel layout: %lu, Sample rate: %d, Sample format: %d", pMicCodecCtx->channel_layout, pMicCodecCtx->sample_rate, pMicCodecCtx->sample_fmt);
         
         // AUDIO: Input
         // Channel layout: 3 = STEREO (LEFT | RIGHT)
@@ -999,7 +1014,7 @@ static int receive_command(void* arg) {
                     sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
                 }
             } else if (equals(command_data->cmd, "DISCONNECT")) {
-                cop_debug("Do disconnect");
+                cop_debug("[receive_command] Do disconnect");
                 sender_stop();
             } else {
                 cop_debug("[receive_command] IGNORE: %s", command_data->cmd);
@@ -1053,7 +1068,8 @@ void list_devices(char* platform) {
 /*
  * Usage: ./cop_sender -platform=mac|linux|win -cmd=start|list -cam=[name] -mic=[name]
  * ./cop_sender -platform=mac -cmd=list
- * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone" -pwd="Fucking-Awesome"
+ * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone" -pwd="do-IT-my-way"
+ * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":AK5371" -pwd="do-IT-my-way"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera"
  * ./cop_sender -platform=mac -cmd=start -cam="Capture screen 0" -mic=":Built-in Microphone"
