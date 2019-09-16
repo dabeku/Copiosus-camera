@@ -397,6 +397,13 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
             if (micFrameFinished) {
                 src_data = decoded_frame->data;
 
+                int dst_bufsize_before = av_samples_get_buffer_size(NULL, 2,
+                                                 src_nb_samples, AV_SAMPLE_FMT_FLT, 0);
+                //cop_debug("dst_bufsize2: %d", dst_bufsize2);
+                FILE* dst_file = fopen("raw_before.mic", "ab");
+                fwrite(src_data[0], 1, dst_bufsize_before, dst_file);
+                fclose(dst_file);
+
                 // Use swr_convert() as FIFO: Put in some data
                 int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, src_nb_samples);
 
@@ -419,6 +426,14 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
                     }
                     // We got enough samples. Convert to destination format
                     outSamples = swr_convert(swr_ctx, final_frame->data, final_frame->nb_samples, NULL, 0);
+
+                    int dst_bufsize = av_samples_get_buffer_size(NULL, nb_channels,
+                                                 outSamples, AV_SAMPLE_FMT_S16, 0);
+                    //cop_debug("dst_bufsize: %d", dst_bufsize);
+                    FILE* dst_file = fopen("raw_after.mic", "ab");
+                    fwrite(final_frame->data[0], 1, dst_bufsize, dst_file);
+                    fclose(dst_file);
+
                     final_frame->pts = ost->next_pts;
                     ost->next_pts += final_frame->nb_samples;
                     return final_frame;

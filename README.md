@@ -62,3 +62,9 @@ sudo sh -c 'echo 0 > /sys/class/leds/led1/brightness'
 Copiosus: Mac
 
 Camera: Raspberry Pi
+
+
+
+ffplay -f f32le -channel_layout 3 -channels 2 raw_before.mic
+
+ffplay -f s16le -channel_layout 3 -channels 2 -ar 44100 raw_after.mic
