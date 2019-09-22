@@ -47,6 +47,7 @@ static int isVideoQuit = 1;
 static int isAudioProcessing = 0;
 static int isVideoProcessing = 0;
 
+static char* platform = NULL;
 static char* senderId = NULL;
 
 // 0 = idle
@@ -809,7 +810,11 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     //pCamFormatCtx->interrupt_callback.callback = interrupt_cb;
     //pCamFormatCtx->interrupt_callback.opaque = pCamFormatCtx;
 
-    pCamInputFormat = av_find_input_format("avfoundation");
+    if (equals(platform, "linux")) {
+        pCamInputFormat = av_find_input_format("alsa");
+    } else {
+        pCamInputFormat = av_find_input_format("avfoundation");
+    }
     av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(width), "x"), int_to_str(height)), 0);
     av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
     //av_dict_set(&pCamOpt, "timeout", "5", 0); 
@@ -1044,7 +1049,7 @@ static int receive_command(void* arg) {
     return 0;
 }
 
-void list_devices(char* platform) {
+void list_devices() {
 
     if (equals(platform, "mac")) {
         //Avfoundation: [video]:[audio]
@@ -1097,7 +1102,7 @@ int main(int argc, char* argv[]) {
     // Initialize networking
     avformat_network_init();
 
-    char* platform = NULL;
+    char* platformParam = NULL;
     char* cmd = NULL;
     char* cam = NULL;
     char* mic = NULL;
@@ -1116,7 +1121,7 @@ int main(int argc, char* argv[]) {
         while ((token = strsep(&param, "=")) != NULL) {
 
             if (isPlatform) {
-                platform = token;
+                platformParam = token;
                 isPlatform = false;
             }
             if (equals(token, "-platform")) {
@@ -1157,10 +1162,12 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    if (platform == NULL || cmd == NULL) {
+    if (platformParam == NULL || cmd == NULL) {
         cop_debug("[main] ./cop_sender -platform=mac|linux|win -cmd=start|list -cam=[name] -mic=[name].");
         return STATUS_CODE_OK;
     }
+
+    platform = platformParam;
 
     cop_debug("[main] Arguments: %s %s.", platform, cmd);
 
@@ -1205,7 +1212,12 @@ int main(int argc, char* argv[]) {
         */
         cop_debug("[main] Open audio format.");
         pMicFormatCtx = avformat_alloc_context();
-        pMicInputFormat = av_find_input_format("alsa");
+        if (equals(system, "linux")) {
+            pMicInputFormat = av_find_input_format("alsa");
+        } else {
+            pMicInputFormat = av_find_input_format("avfoundation");
+        }
+        
         if (avformat_open_input(&pMicFormatCtx, pMicName, pMicInputFormat, &pMicOpt) != 0) {
             cop_error("[sender_initialize] Mic: Can't open format.");
             return STATUS_CODE_NOK;
