@@ -811,7 +811,7 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     //pCamFormatCtx->interrupt_callback.opaque = pCamFormatCtx;
 
     if (equals(platform, "linux")) {
-        pCamInputFormat = av_find_input_format("alsa");
+        pCamInputFormat = av_find_input_format("video4linux");
     } else {
         pCamInputFormat = av_find_input_format("avfoundation");
     }
@@ -908,7 +908,7 @@ int sender_initialize(char* url, int width, int height, int framerate) {
         
         cop_debug("[sender_initialize] Calling avcodec_find_decoder().");
         pMicCodec = avcodec_find_decoder(pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
-        if (pCamCodec==NULL) {
+        if (pMicCodec==NULL) {
             cop_error("[sender_initialize] Codec %d not found.", pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
             changeState(0);
             return STATUS_CODE_NOK;
