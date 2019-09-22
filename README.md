@@ -36,7 +36,7 @@ List connected devices:
 
 Add the following line before exit 0:
 
-```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 > /home/pi/Documents/log.txt &```
+```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 -mic=hw:1 -pwd="this-is-a-password" >> /home/pi/Documents/log.txt &```
 
 ## Disable all LEDs
 
@@ -61,9 +61,9 @@ sudo sh -c 'echo 0 > /sys/class/leds/led1/brightness'
 
 Copiosus: Mac
 
-Camera: Raspberry Pi
+Camera: Raspberry with camera and USB mic
 
-
+## Play raw mic files
 
 ffplay -f f32le -channel_layout 3 -channels 2 raw_before.mic
 
