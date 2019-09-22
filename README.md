@@ -20,7 +20,7 @@ The idea is simple:
 
 ## Run
 
-```./cop_sender -platform=linux -cmd=start -cam=/dev/video0 -pwd="This-is-Awesome"```
+```./cop_sender -platform=linux -cmd=start -cam=/dev/video0 -mic=hw:1 -pwd="This-is-Awesome"```
 
 ## Commands
 
