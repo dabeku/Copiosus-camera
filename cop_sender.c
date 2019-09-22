@@ -1212,7 +1212,7 @@ int main(int argc, char* argv[]) {
         */
         cop_debug("[main] Open audio format.");
         pMicFormatCtx = avformat_alloc_context();
-        if (equals(system, "linux")) {
+        if (equals(platform, "linux")) {
             pMicInputFormat = av_find_input_format("alsa");
         } else {
             pMicInputFormat = av_find_input_format("avfoundation");
