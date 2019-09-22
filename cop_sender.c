@@ -92,7 +92,6 @@ int camAudioStreamIndex = -1;
 struct SwrContext *swr_ctx = NULL;
 // TODO: Decide what to do with this
 uint8_t **src_data = NULL;
-int src_nb_samples = 512;
 AVFrame *final_frame = NULL;
 
 // Set by main() args
@@ -395,17 +394,19 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
             av_packet_unref(&micPacket);
             
             if (micFrameFinished) {
+				
+				int nb_samples = decoded_frame->nb_samples;
+				
                 src_data = decoded_frame->data;
 
-                int dst_bufsize_before = av_samples_get_buffer_size(NULL, 2,
-                                                 src_nb_samples, AV_SAMPLE_FMT_FLT, 0);
-                //cop_debug("dst_bufsize2: %d", dst_bufsize2);
+                /*int dst_bufsize_before = av_samples_get_buffer_size(NULL, 2,
+                                                 nb_samples, AV_SAMPLE_FMT_S16, 0);
                 FILE* dst_file = fopen("raw_before.mic", "ab");
                 fwrite(src_data[0], 1, dst_bufsize_before, dst_file);
-                fclose(dst_file);
+                fclose(dst_file);*/
 
                 // Use swr_convert() as FIFO: Put in some data
-                int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, src_nb_samples);
+                int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, nb_samples);
 
                 if (outSamples < 0) {
                     cop_error("[get_audio_frame] No samples.");
@@ -427,12 +428,11 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
                     // We got enough samples. Convert to destination format
                     outSamples = swr_convert(swr_ctx, final_frame->data, final_frame->nb_samples, NULL, 0);
 
-                    int dst_bufsize = av_samples_get_buffer_size(NULL, nb_channels,
+                    /*int dst_bufsize = av_samples_get_buffer_size(NULL, nb_channels,
                                                  outSamples, AV_SAMPLE_FMT_S16, 0);
-                    //cop_debug("dst_bufsize: %d", dst_bufsize);
                     FILE* dst_file = fopen("raw_after.mic", "ab");
                     fwrite(final_frame->data[0], 1, dst_bufsize, dst_file);
-                    fclose(dst_file);
+                    fclose(dst_file);*/
 
                     final_frame->pts = ost->next_pts;
                     ost->next_pts += final_frame->nb_samples;
@@ -970,6 +970,7 @@ int sender_initialize(char* url, int width, int height, int framerate) {
         // Channel layout: 3 = STEREO (LEFT | RIGHT)
         // Sample rate: 44100
         // Sample format: 3 = AV_SAMPLE_FMT_FLT
+        av_opt_set_int(swr_ctx, "in_channel_count",     2, 0);
         av_opt_set_int(swr_ctx, "in_channel_layout",    pMicCodecCtx->channel_layout, 0);
         av_opt_set_int(swr_ctx, "in_sample_rate",       pMicCodecCtx->sample_rate, 0);
         av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", pMicCodecCtx->sample_fmt, 0);
@@ -1204,7 +1205,7 @@ int main(int argc, char* argv[]) {
         */
         cop_debug("[main] Open audio format.");
         pMicFormatCtx = avformat_alloc_context();
-        pMicInputFormat = av_find_input_format("avfoundation");
+        pMicInputFormat = av_find_input_format("alsa");
         if (avformat_open_input(&pMicFormatCtx, pMicName, pMicInputFormat, &pMicOpt) != 0) {
             cop_error("[sender_initialize] Mic: Can't open format.");
             return STATUS_CODE_NOK;
