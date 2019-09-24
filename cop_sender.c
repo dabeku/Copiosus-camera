@@ -118,12 +118,30 @@ typedef struct Container {
     AVFormatContext *formatContext;
 } Container;
 
+typedef struct FileItem {
+    char* file_name;
+    long file_size_kb;
+} FileItem;
+
 // Used here to free memory when closing app
 AVFormatContext *outputContext = NULL;
 OutputStream *video_st = NULL;
 OutputStream *audio_st = NULL;
 int have_video = 0;
 int have_audio = 0;
+
+/*
+static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
+{
+    AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
+
+    printf("pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+           av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
+           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
+           av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
+           pkt->stream_index);
+}
+*/
 
 void intHandler(int dummy) {
     cop_debug("[intHandler] Closing app.");
@@ -138,26 +156,42 @@ static int interrupt_cb(void *ctx) {
 
 static void sendState(broadcast_data* broadcast_data) {
     if (state == 0) {
-        const char* msg = concat("IDLE ", senderId);
+        const char* msg = concat("STATE IDLE ", senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else if (state == 1) {
-        const char* msg = concat("INITIALIZING ", senderId);
+        const char* msg = concat("STATE INITIALIZING ", senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else if (state == 2) {
-        const char* msg = concat("CONNECTED ", senderId);
+        const char* msg = concat("STATE CONNECTED ", senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else if (state == 3) {
-        const char* msg = concat("DISCONNECTING ", senderId);
+        const char* msg = concat("STATE DISCONNECTING ", senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else {
-        const char* msg = concat("UNKNOWN ", senderId);
+        const char* msg = concat("STATE UNKNOWN ", senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     }
+}
+
+static void send_files(broadcast_data* broadcast_data, list_item* files) {
+    const char* msg = "LIST_FILES";
+
+    for (int i = 0; i < list_length(files); i++) {
+        list_item* item = list_get(files, i);
+        FileItem* file = (FileItem*)item->data;
+        msg = concat(msg, " ");
+        msg = concat(msg, file->file_name);
+        msg = concat(msg, " ");
+        msg = concat(msg, int_to_str(file->file_size_kb));
+    }
+
+    size_t msg_length = strlen(msg);
+    network_send_udp(msg, msg_length, broadcast_data);
 }
 
 static void changeState(int newState) {
@@ -211,7 +245,7 @@ static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AV
         // Rescale audio pts from 1152 to 2351
         av_packet_rescale_ts(pkt, *time_base, st->time_base);
     }
-    //cop_debug("PTS (stream: %d): %lld\n", st->index, pkt->pts);
+    //cop_debug("PTS (stream: %d): %lld", st->index, pkt->pts);
 
     SDL_LockMutex(write_mutex);
     /* Write the compressed frame to the media file. */
@@ -653,6 +687,35 @@ static void close_stream(AVFormatContext *oc, OutputStream *ost) {
     //sws_freeContext(ost->sws_ctx);
 }
 
+void list_files() {
+    cop_debug("[list_files].");
+
+    struct dirent *entry;
+    DIR *dir = opendir("./");
+    if (dir == NULL) {
+        return;
+    }
+
+    struct list_item* file_list = NULL;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (contains(entry->d_name, "video_")) {
+            FileItem* file_item = malloc(sizeof(FileItem));
+            file_item->file_name = entry->d_name;
+            file_list = list_push(file_list, file_item);
+            FILE* file = fopen(entry->d_name, "rb");
+            fseek(file, 0, SEEK_END);
+            file_item->file_size_kb = ftell(file) / 1024;
+            fclose(file);
+        }
+    }
+    closedir(dir);
+
+    if (last_broadcast_data != NULL) {
+        send_files(last_broadcast_data, file_list);
+    }
+}
+
 void sender_stop() {
     cop_debug("[sender_stop].");
 
@@ -1037,6 +1100,9 @@ static int receive_command(void* arg) {
             } else if (equals(command_data->cmd, "DISCONNECT")) {
                 cop_debug("[receive_command] Do disconnect");
                 sender_stop();
+            } else if (equals(command_data->cmd, "LIST_FILES")) {
+                cop_debug("[receive_command] List files");
+                list_files();
             } else {
                 cop_debug("[receive_command] IGNORE: %s", command_data->cmd);
             }

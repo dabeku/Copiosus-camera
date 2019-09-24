@@ -236,6 +236,7 @@ void house_keeping(char* current_file) {
     }
 
     if (oldest_file != NULL) {
+        cop_debug("[house_keeping] Delete oldest file: %s.", oldest_file);
         remove(oldest_file);
     }
 }

@@ -65,6 +65,7 @@ Camera: Raspberry with camera and USB mic
 
 ## Play raw mic files
 
+```
 ffplay -f f32le -channel_layout 3 -channels 2 raw_before.mic
-
 ffplay -f s16le -channel_layout 3 -channels 2 -ar 44100 raw_after.mic
+```

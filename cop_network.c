@@ -188,6 +188,7 @@ void set_next_video_file() {
     video_file_name = "video_";
     video_file_name = concat(video_file_name, get_timestamp());
     video_file_name = concat(video_file_name, ".ts");
+    cop_debug("[set_next_video_file] New video file: %s.", video_file_name);
     video_file = fopen(video_file_name, "ab");
 }
 
