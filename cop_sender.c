@@ -149,6 +149,14 @@ void intHandler(int dummy) {
     quit = 1;
 }
 
+void sigPipeHandler(int dummy) {
+    cop_debug("[sigPipeHandler].");
+}
+
+void ePipeHandler(int dummy) {
+    cop_debug("[ePipeHandler].");
+}
+
 static int interrupt_cb(void *ctx) {
     cop_debug("[interrupt_cb] Stop due to interrupt poll.");
     return 0;
@@ -164,7 +172,10 @@ static void sendState(broadcast_data* broadcast_data) {
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else if (state == 2) {
-        const char* msg = concat("STATE CONNECTED ", senderId);
+        const char* ipSendTo = get_sendto_ip();
+        const char* msg = concat("STATE CONNECTED;", ipSendTo);
+        msg = concat(msg, " ");
+        msg = concat(msg, senderId);
         size_t msg_length = strlen(msg);
         network_send_udp(msg, msg_length, broadcast_data);
     } else if (state == 3) {
@@ -679,12 +690,8 @@ static int open_video(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AV
 }
 
 static void close_stream(AVFormatContext *oc, OutputStream *ost) {
-    cop_debug("[close_stream] %p.", &ost->enc);
     avcodec_free_context(&ost->enc);
-    cop_debug("[close_stream] Calling av_frame_free(): %p.", &ost->frame);
     av_frame_free(&ost->frame);
-    //cop_debug("[close_stream] Calling sws_freeContext(): %p.", ost->sws_ctx);
-    //sws_freeContext(ost->sws_ctx);
 }
 
 void list_files() {
@@ -714,6 +721,15 @@ void list_files() {
     if (last_broadcast_data != NULL) {
         send_files(last_broadcast_data, file_list);
     }
+}
+
+void delete_file(char* file_name) {
+    cop_debug("[delete_file].");
+
+    if (file_name == NULL) {
+        return;
+    }
+    remove(file_name);
 }
 
 void sender_stop() {
@@ -1103,6 +1119,9 @@ static int receive_command(void* arg) {
             } else if (equals(command_data->cmd, "LIST_FILES")) {
                 cop_debug("[receive_command] List files");
                 list_files();
+            } else if (equals(command_data->cmd, "DELETE")) {
+                cop_debug("[receive_command] Delete");
+                delete_file(command_data->file_name);
             } else {
                 cop_debug("[receive_command] IGNORE: %s", command_data->cmd);
             }
@@ -1300,6 +1319,9 @@ int main(int argc, char* argv[]) {
     //SDL_AddTimer(1000, periodic_cb, NULL);
 
     signal(SIGINT, intHandler);
+    
+    signal(SIGPIPE, sigPipeHandler);
+    signal(EPIPE, ePipeHandler);
 
     if (TEST_LOCAL) {
         if (USE_PROXY) {
@@ -1337,6 +1359,7 @@ int main(int argc, char* argv[]) {
         // TODO: Make port more reasonable
         proxy_init(LOCALHOST_IP, 9999, encryptionPwd);
         SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+        SDL_CreateThread(network_receive_tcp, "network_receive_tcp", NULL);
         char* url = "udp://";
         url = concat(url, LOCALHOST_IP);
         url = concat(url, ":");

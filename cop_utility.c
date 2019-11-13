@@ -46,7 +46,7 @@ void cop_error(const char* format, ...) {
         timeinfo->tm_min,
         timeinfo->tm_sec);
 
-    const char* prefix = concat(output, " [ERROR] ");
+    const char* prefix = concat(output, " [-ERROR-] ");
     format = concat(prefix, format);
     format = concat(format, "\n");
 
@@ -65,10 +65,10 @@ char* get_timestamp() {
     memset(buffer, '\0', 64);
     sprintf(
         buffer,
-        "%02d-%02d-%04d_%02d-%02d-%02d",
+        "%04d-%02d-%02d_%02d-%02d-%02d",
+        timeinfo->tm_year + 1900,
         timeinfo->tm_mday,
         timeinfo->tm_mon + 1,
-        timeinfo->tm_year + 1900,
         timeinfo->tm_hour,
         timeinfo->tm_min,
         timeinfo->tm_sec);

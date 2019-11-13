@@ -19,11 +19,12 @@
 
 static int receive_udp_socket = -1;
 static int receive_udp_broadcast_socket = -1;
+static int receive_tcp_socket = -1;
 
 static int proxy_send_udp_socket = -1;
 static int proxy_receive_udp_socket = -1;
 static struct sockaddr_in dest_addr;
-static bool isProxyRunning = false;
+static bool isNetworkRunning = false;
 static FILE* video_file = NULL;
 static char* video_file_name = NULL;
 
@@ -114,20 +115,29 @@ command_data* network_receive_udp(int listen_port) {
             i++;
             continue;
         }
-        if (i == 1) {
-            data->protocol = token;
-            i++;
-            continue;
+        if (equals(data->cmd, "CONNECT")) {
+            if (i == 1) {
+                data->protocol = token;
+                i++;
+                continue;
+            }
+            if (i == 2) {
+                data->ip = token;
+                i++;
+                continue;
+            }
+            if (i == 3) {
+                data->port = str_to_int(token);
+                i++;
+                continue;
+            }
         }
-        if (i == 2) {
-            data->ip = token;
-            i++;
-            continue;
-        }
-        if (i == 3) {
-            data->port = str_to_int(token);
-            i++;
-            continue;
+        if (equals(data->cmd, "DELETE")) {
+            if (i == 1) {
+                data->file_name = token;
+                i++;
+                continue;
+            }
         }
         i++;
     }
@@ -159,7 +169,6 @@ void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_d
             buffSizeToSend = sizeLeftToSend;
         }
         cop_debug("[network_send_udp] Send: %d bytes to %s:%d", buffSizeToSend, broadcast_data->src_ip, PORT_LISTEN_SERVER);
-        data = data + i;
         
         int result = sendto(s, data, buffSizeToSend, 0, (struct sockaddr *)&addr, sizeof(addr));
         if (result < 0) {
@@ -167,6 +176,8 @@ void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_d
             exit(-1);
         }
         sizeLeftToSend -= BUFFER_SIZE;
+
+        data = data + buffSizeToSend;
     }
 }
 
@@ -174,14 +185,22 @@ void proxy_close() {
     if (proxy_send_udp_socket < 0) {
         cop_error("[proxy_close] Socket send not open: %d.", proxy_send_udp_socket);
     } else {
+        cop_debug("[proxy_close] Close 'send-udp-socket'.");
         close(proxy_send_udp_socket);
     }
     if (proxy_receive_udp_socket < 0) {
         cop_error("[proxy_close] Socket receive not open: %d.", proxy_receive_udp_socket);
     } else {
+        cop_debug("[proxy_close] Close 'receive-udp-socket'.");
         close(proxy_receive_udp_socket);
     }
-    isProxyRunning = false;
+    if (receive_tcp_socket < 0) {
+        cop_error("[proxy_close] Socket receive (tcp) not open: %d.", receive_tcp_socket);
+    } else {
+        cop_debug("[proxy_close] Close 'receive-tcp-socket'.");
+        close(receive_tcp_socket);
+    }
+    isNetworkRunning = false;
 }
 
 void set_next_video_file() {
@@ -205,9 +224,15 @@ void proxy_init(const char* dest_ip, int dest_port, const char* pwd) {
     encryptionPwd = pwd;
     set_next_video_file();
 
-    isProxyRunning = true;
+    isNetworkRunning = true;
 
     cop_debug("[proxy_init] Done.");
+}
+
+// We only want to redirect output to localhost again
+void proxy_reset() {
+    dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dest_addr.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY);
 }
 
 void proxy_send_udp(const char* data) {
@@ -225,8 +250,6 @@ void proxy_send_udp(const char* data) {
 }
 
 int proxy_receive_udp(void* arg) {
-
-    //cop_debug("[proxy_receive_udp].");
 
     struct sockaddr_in addr, si_other;
     proxy_receive_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
@@ -254,7 +277,7 @@ int proxy_receive_udp(void* arg) {
     memset(buffer, '\0', PROXY_BUFFER_SIZE_BYTES);
     unsigned slen=sizeof(addr);
 
-    while (isProxyRunning) {
+    while (isNetworkRunning) {
         int read = recvfrom(proxy_receive_udp_socket, buffer, PROXY_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&si_other, &slen);
         //cop_debug("[proxy_receive_udp] Received: %d - %d.", read, sendIndex);
 
@@ -313,4 +336,133 @@ int proxy_receive_udp(void* arg) {
 
 char* get_video_file_name() {
     return video_file_name;
+}
+
+char* get_sendto_ip() {
+    char* str = malloc(sizeof(char) * INET_ADDRSTRLEN);
+    inet_ntop(AF_INET, &(dest_addr.sin_addr), str, INET_ADDRSTRLEN);
+    return str;
+}
+
+int network_receive_tcp(void* arg) {
+
+    struct sockaddr_in serv_addr;
+    struct sockaddr_in client_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(PORT_LISTEN_TCP_DOWNLOAD);
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+
+    receive_tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (receive_tcp_socket < 0) {
+        cop_error("[network_receive_tcp] Could not create socket.");
+        return STATUS_CODE_NOK;
+    }
+
+    // Bind
+    if (bind(receive_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
+        cop_error("[network_receive_tcp] Bind failed.");
+        return STATUS_CODE_NOK;
+    }
+
+    cop_debug("[network_receive_tcp] Start listening for clients.");
+
+    listen(receive_tcp_socket, 1);
+
+    int c = sizeof(struct sockaddr_in);
+
+    while (isNetworkRunning) {
+
+        cop_debug("[network_receive_tcp] Wait for clients: %d.", receive_tcp_socket);
+
+        int client_socket = accept(receive_tcp_socket, (struct sockaddr*) &client_addr, (socklen_t*)&c);
+
+        if (client_socket < 0) {
+            cop_error("[network_receive_tcp] Accept failed: %d.", client_socket);
+            continue;
+        }
+
+        cop_debug("[network_receive_tcp] Accept incoming connection.");
+
+        // Receive data
+        int read_size = 0;
+        char* buffer = malloc(sizeof(char) * BUFFER_SIZE);
+        memset(buffer, '\0', BUFFER_SIZE);
+
+        if ((read_size = recv(client_socket, buffer, BUFFER_SIZE, 0)) > 0) {
+            char* string = strdup(buffer);
+            if (string == NULL) {
+                close(client_socket);
+                cop_error("[network_receive_tcp] Receive failed.");
+                continue;
+            }
+
+            int i = 0;
+            char* token;
+            char* cmd;
+            while ((token = strsep(&buffer, " ")) != NULL) {
+                cop_debug("[network_receive_tcp] Token: %s", token);
+                if (i == 0) {
+                    cmd = token;
+                    i++;
+                    continue;
+                }
+                if (equals(cmd, "DOWNLOAD")) {
+                    if (i == 1) {
+                        FILE* download_file = fopen(token, "rb");
+
+                        // Calc the size needed
+                        fseek(download_file, 0, SEEK_END); 
+                        int size = ftell(download_file);
+                        fseek(download_file, 0, SEEK_SET);
+                        // Allocale space on heap
+                        char* download_buffer = malloc(size);
+                        memset(download_buffer, '\0', size);
+
+                        cop_debug("[network_send_tcp] Read %d bytes from file.", size);
+
+                        fread(download_buffer, 1, size, download_file);
+
+                        cop_debug("[network_send_tcp] Successfully read binary data.");
+
+                        int sizeLeftToSend = size;
+                        for (int j = 0; j < size; j+=BUFFER_SIZE) {
+                            
+                            int buffSizeToSend = BUFFER_SIZE;
+                            if (sizeLeftToSend < BUFFER_SIZE) {
+                                buffSizeToSend = sizeLeftToSend;
+                            }
+                            
+                            int result = send(client_socket, download_buffer, buffSizeToSend, 0);
+                            if (result < 0) {
+                                //close(client_socket);
+                                cop_error("[network_send_tcp] Send failed: %d.", result);
+                                break;
+                            }
+                            sizeLeftToSend -= BUFFER_SIZE;
+                            // Set start position of sending data
+                            download_buffer = download_buffer + buffSizeToSend;
+                        }
+
+                        cop_debug("[network_send_tcp] Finishing download: Shutdown socket.");
+                        shutdown(client_socket, SHUT_RDWR);
+                        cop_debug("[network_send_tcp] Finishing download: Close socket.");
+                        close(client_socket);
+                        cop_debug("[network_send_tcp] Finishing download: Close file.");
+                        fclose(download_file);
+                        i++;
+                        break;
+                    }
+                }
+                i++;
+            }
+        } else {
+            close(client_socket);
+            cop_error("[network_receive_tcp] Receive failed.");
+            continue;
+        }
+    }
+
+    cop_debug("[network_receive_tcp] Done.");
+
+    return STATUS_CODE_OK;
 }
