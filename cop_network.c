@@ -234,8 +234,10 @@ void proxy_init(const char* dest_ip, int dest_port, const char* pwd) {
 
 // We only want to redirect output to localhost again
 void proxy_reset() {
+    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY);
     dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
     dest_addr.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY);
+    cop_debug("[proxy_reset] Done.");
 }
 
 void proxy_send_udp(const char* data) {

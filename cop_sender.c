@@ -206,6 +206,13 @@ static void send_files(broadcast_data* broadcast_data, list_item* files) {
     network_send_udp(msg, msg_length, broadcast_data);
 }
 
+/*
+ * 0 = IDLE,
+ * 1 = INITIALIZING,
+ * 2 = CONNECTED,
+ * 3 = DISCONNECTING
+ * x = UNKNOWN
+ */
 static void changeState(int newState) {
     state = newState;
 
@@ -1123,6 +1130,11 @@ static int receive_command(void* arg) {
             } else if (equals(command_data->cmd, "DELETE")) {
                 cop_debug("[receive_command] Delete");
                 delete_file(command_data->file_name);
+            } else if (equals(command_data->cmd, "RESET")) {
+                cop_debug("[receive_command] Reset");
+                proxy_reset();
+                // Update previous state with new IP for 'send to'
+                changeState(state);
             } else {
                 cop_debug("[receive_command] IGNORE: %s", command_data->cmd);
             }
@@ -1305,16 +1317,18 @@ int main(int argc, char* argv[]) {
         }
         
         if (avformat_open_input(&pMicFormatCtx, pMicName, pMicInputFormat, &pMicOpt) != 0) {
-            cop_error("[sender_initialize] Mic: Can't open format.");
-            return STATUS_CODE_NOK;
+            // Error: Can't find mic
+            cop_error("[sender_initialize] Mic: Can't open format. Ignore audio.");
+            pMicName = NULL;
+        } else {
+            // Success: Found mic
+            cop_debug("[main] Calling avformat_find_stream_info().");
+            if (avformat_find_stream_info(pMicFormatCtx, NULL) < 0) {
+                cop_error("[main] Mic: Can't find stream information.");
+                return STATUS_CODE_NOK;
+            }
+            cop_debug("[main] Setup audio: Done");
         }
-
-        cop_debug("[main] Calling avformat_find_stream_info().");
-        if (avformat_find_stream_info(pMicFormatCtx, NULL) < 0) {
-            cop_error("[main] Mic: Can't find stream information.");
-            return STATUS_CODE_NOK;
-        }
-        cop_debug("[main] Setup audio: Done");
     }
 
     //SDL_AddTimer(1000, periodic_cb, NULL);
