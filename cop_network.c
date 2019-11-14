@@ -194,13 +194,16 @@ void proxy_close() {
         cop_debug("[proxy_close] Close 'receive-udp-socket'.");
         close(proxy_receive_udp_socket);
     }
+    isNetworkRunning = false;
+}
+
+void server_close() {
     if (receive_tcp_socket < 0) {
         cop_error("[proxy_close] Socket receive (tcp) not open: %d.", receive_tcp_socket);
     } else {
         cop_debug("[proxy_close] Close 'receive-tcp-socket'.");
         close(receive_tcp_socket);
     }
-    isNetworkRunning = false;
 }
 
 void set_next_video_file() {
@@ -279,7 +282,6 @@ int proxy_receive_udp(void* arg) {
 
     while (isNetworkRunning) {
         int read = recvfrom(proxy_receive_udp_socket, buffer, PROXY_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&si_other, &slen);
-        //cop_debug("[proxy_receive_udp] Received: %d - %d.", read, sendIndex);
 
         if (read == -1) {
             cop_error("[proxy_receive_udp] Stop proxy.");
@@ -370,7 +372,7 @@ int network_receive_tcp(void* arg) {
 
     int c = sizeof(struct sockaddr_in);
 
-    while (isNetworkRunning) {
+    while (true) {
 
         cop_debug("[network_receive_tcp] Wait for clients: %d.", receive_tcp_socket);
 
@@ -378,7 +380,7 @@ int network_receive_tcp(void* arg) {
 
         if (client_socket < 0) {
             cop_error("[network_receive_tcp] Accept failed: %d.", client_socket);
-            continue;
+            break;
         }
 
         cop_debug("[network_receive_tcp] Accept incoming connection.");

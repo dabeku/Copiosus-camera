@@ -50,7 +50,10 @@ broadcast_data* network_receive_udp_broadcast(int port);
 void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_data);
 command_data* network_receive_udp(int listen_port);
 
+// Close proxy related stuff
 void proxy_close();
+// Close TCP server related stuff
+void server_close();
 void proxy_init(const char* dest_ip, int dest_port, const char* encryptionPwd);
 int proxy_receive_udp(void* arg);
 char* get_video_file_name();

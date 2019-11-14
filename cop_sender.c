@@ -146,6 +146,7 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 void intHandler(int dummy) {
     cop_debug("[intHandler] Closing app.");
     proxy_close();
+    server_close();
     quit = 1;
 }
 
