@@ -320,7 +320,6 @@ int proxy_receive_udp(void* arg) {
                 size_t pwd_length = strlen(encryptionPwd);
                 if (pwd_length > 0) {
                     for(int i = 0; i < PROXY_SEND_BUFFER_SIZE_BYTES; i++) {
-                        //sendBuffer[i] = sendBuffer[i] ^ i;
                         sendBuffer[i] = sendBuffer[i] ^ encryptionPwd[i % pwd_length];
                     }
                 }
@@ -370,12 +369,25 @@ static void tcp_return_download(int client_socket, const char* fileName) {
 
     cop_debug("[network_send_tcp] Successfully read binary data.");
 
+    int overall = 0;
+
     int sizeLeftToSend = size;
     for (int j = 0; j < size; j+=BUFFER_SIZE) {
         
         int buffSizeToSend = BUFFER_SIZE;
         if (sizeLeftToSend < BUFFER_SIZE) {
             buffSizeToSend = sizeLeftToSend;
+        }
+
+        // Do encryption
+        if (encryptionPwd != NULL) {
+            size_t pwd_length = strlen(encryptionPwd);
+            if (pwd_length > 0) {
+                for (int i = 0; i < buffSizeToSend; i++) {
+                    download_buffer[i] = download_buffer[i] ^ encryptionPwd[overall % pwd_length];
+                    overall++;
+                }
+            }
         }
         
         int result = send(client_socket, download_buffer, buffSizeToSend, 0);
