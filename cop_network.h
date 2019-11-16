@@ -52,6 +52,8 @@ command_data* network_receive_udp(int listen_port);
 
 // Close proxy related stuff
 void proxy_close();
+// Reset proxy to 127.0.0.1
+void proxy_reset();
 // Close TCP server related stuff
 void server_close();
 void proxy_init(const char* dest_ip, int dest_port, const char* encryptionPwd);

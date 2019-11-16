@@ -190,22 +190,6 @@ static void sendState(broadcast_data* broadcast_data) {
     }
 }
 
-static void send_files(broadcast_data* broadcast_data, list_item* files) {
-    const char* msg = "LIST_FILES";
-
-    for (int i = 0; i < list_length(files); i++) {
-        list_item* item = list_get(files, i);
-        FileItem* file = (FileItem*)item->data;
-        msg = concat(msg, " ");
-        msg = concat(msg, file->file_name);
-        msg = concat(msg, " ");
-        msg = concat(msg, int_to_str(file->file_size_kb));
-    }
-
-    size_t msg_length = strlen(msg);
-    network_send_udp(msg, msg_length, broadcast_data);
-}
-
 /*
  * 0 = IDLE,
  * 1 = INITIALIZING,
@@ -702,35 +686,6 @@ static void close_stream(AVFormatContext *oc, OutputStream *ost) {
     av_frame_free(&ost->frame);
 }
 
-void list_files() {
-    cop_debug("[list_files].");
-
-    struct dirent *entry;
-    DIR *dir = opendir("./");
-    if (dir == NULL) {
-        return;
-    }
-
-    struct list_item* file_list = NULL;
-
-    while ((entry = readdir(dir)) != NULL) {
-        if (contains(entry->d_name, "video_")) {
-            FileItem* file_item = malloc(sizeof(FileItem));
-            file_item->file_name = entry->d_name;
-            file_list = list_push(file_list, file_item);
-            FILE* file = fopen(entry->d_name, "rb");
-            fseek(file, 0, SEEK_END);
-            file_item->file_size_kb = ftell(file) / 1024;
-            fclose(file);
-        }
-    }
-    closedir(dir);
-
-    if (last_broadcast_data != NULL) {
-        send_files(last_broadcast_data, file_list);
-    }
-}
-
 void delete_file(char* file_name) {
     cop_debug("[delete_file].");
 
@@ -1124,9 +1079,6 @@ static int receive_command(void* arg) {
             } else if (equals(command_data->cmd, "DISCONNECT")) {
                 cop_debug("[receive_command] Do disconnect");
                 sender_stop();
-            } else if (equals(command_data->cmd, "LIST_FILES")) {
-                cop_debug("[receive_command] List files");
-                list_files();
             } else if (equals(command_data->cmd, "DELETE")) {
                 cop_debug("[receive_command] Delete");
                 delete_file(command_data->file_name);
@@ -1270,7 +1222,7 @@ int main(int argc, char* argv[]) {
     cop_debug("[main] Arguments: %s %s.", platform, cmd);
 
     if (equals(cmd, "list")) {
-        list_devices(platform);
+        list_devices();
         return STATUS_CODE_OK;
     }
 

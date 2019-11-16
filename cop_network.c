@@ -31,6 +31,11 @@ static char* video_file_name = NULL;
 // Set by main() args
 static const char* encryptionPwd = NULL;
 
+typedef struct FileItem {
+    char* file_name;
+    long file_size_kb;
+} FileItem;
+
 broadcast_data* network_receive_udp_broadcast(int port) {
     cop_debug("[network_receive_udp_broadcast].");
 
@@ -348,6 +353,113 @@ char* get_sendto_ip() {
     return str;
 }
 
+static void tcp_return_download(int client_socket, const char* fileName) {
+    FILE* download_file = fopen(fileName, "rb");
+
+    // Calc the size needed
+    fseek(download_file, 0, SEEK_END); 
+    int size = ftell(download_file);
+    fseek(download_file, 0, SEEK_SET);
+    // Allocale space on heap
+    char* download_buffer = malloc(size);
+    memset(download_buffer, '\0', size);
+
+    cop_debug("[network_send_tcp] Read %d bytes from file.", size);
+
+    fread(download_buffer, 1, size, download_file);
+
+    cop_debug("[network_send_tcp] Successfully read binary data.");
+
+    int sizeLeftToSend = size;
+    for (int j = 0; j < size; j+=BUFFER_SIZE) {
+        
+        int buffSizeToSend = BUFFER_SIZE;
+        if (sizeLeftToSend < BUFFER_SIZE) {
+            buffSizeToSend = sizeLeftToSend;
+        }
+        
+        int result = send(client_socket, download_buffer, buffSizeToSend, 0);
+        if (result < 0) {
+            //close(client_socket);
+            cop_error("[network_send_tcp] Send failed: %d.", result);
+            break;
+        }
+        sizeLeftToSend -= BUFFER_SIZE;
+        // Set start position of sending data
+        download_buffer = download_buffer + buffSizeToSend;
+    }
+
+    cop_debug("[network_send_tcp] Finishing download: Shutdown socket.");
+    shutdown(client_socket, SHUT_RDWR);
+    cop_debug("[network_send_tcp] Finishing download: Close socket.");
+    close(client_socket);
+    cop_debug("[network_send_tcp] Finishing download: Close file.");
+    fclose(download_file);
+}
+
+static void tcp_return_list_files(int client_socket) {
+
+    struct dirent *entry;
+    DIR *dir = opendir("./");
+    if (dir == NULL) {
+        return;
+    }
+
+    struct list_item* file_list = NULL;
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (contains(entry->d_name, "video_")) {
+            FileItem* file_item = malloc(sizeof(FileItem));
+            file_item->file_name = entry->d_name;
+            file_list = list_push(file_list, file_item);
+            FILE* file = fopen(entry->d_name, "rb");
+            fseek(file, 0, SEEK_END);
+            file_item->file_size_kb = ftell(file) / 1024;
+            fclose(file);
+        }
+    }
+    closedir(dir);
+
+    const char* buffer = "LIST_FILES";
+
+    for (int i = 0; i < list_length(file_list); i++) {
+        list_item* item = list_get(file_list, i);
+        FileItem* file = (FileItem*)item->data;
+        buffer = concat(buffer, " ");
+        buffer = concat(buffer, file->file_name);
+        buffer = concat(buffer, ";");
+        buffer = concat(buffer, int_to_str(file->file_size_kb));
+    }
+
+    int size = strlen(buffer);
+
+    cop_debug("[tcp_return_list_files] Send '%d' bytes to caller.", size);
+
+    int sizeLeftToSend = size;
+    
+    for (int j = 0; j < size; j+=BUFFER_SIZE) {
+        
+        int buffSizeToSend = BUFFER_SIZE;
+        if (sizeLeftToSend < BUFFER_SIZE) {
+            buffSizeToSend = sizeLeftToSend;
+        }
+        
+        int result = send(client_socket, buffer, buffSizeToSend, 0);
+        if (result < 0) {
+            cop_error("[tcp_return_list_files] Send failed: %d.", result);
+            break;
+        }
+        sizeLeftToSend -= BUFFER_SIZE;
+        // Set start position of sending data
+        buffer = buffer + buffSizeToSend;
+    }
+
+    cop_debug("[tcp_return_list_files] Finishing: Shutdown socket.");
+    shutdown(client_socket, SHUT_RDWR);
+    cop_debug("[tcp_return_list_files] Finishing: Close socket.");
+    close(client_socket);
+}
+
 int network_receive_tcp(void* arg) {
 
     struct sockaddr_in serv_addr;
@@ -407,52 +519,18 @@ int network_receive_tcp(void* arg) {
                 cop_debug("[network_receive_tcp] Token: %s", token);
                 if (i == 0) {
                     cmd = token;
+
+                    if (equals(cmd, "LIST_FILES")) {
+                        tcp_return_list_files(client_socket);
+                        break;
+                    }
+
                     i++;
                     continue;
                 }
                 if (equals(cmd, "DOWNLOAD")) {
                     if (i == 1) {
-                        FILE* download_file = fopen(token, "rb");
-
-                        // Calc the size needed
-                        fseek(download_file, 0, SEEK_END); 
-                        int size = ftell(download_file);
-                        fseek(download_file, 0, SEEK_SET);
-                        // Allocale space on heap
-                        char* download_buffer = malloc(size);
-                        memset(download_buffer, '\0', size);
-
-                        cop_debug("[network_send_tcp] Read %d bytes from file.", size);
-
-                        fread(download_buffer, 1, size, download_file);
-
-                        cop_debug("[network_send_tcp] Successfully read binary data.");
-
-                        int sizeLeftToSend = size;
-                        for (int j = 0; j < size; j+=BUFFER_SIZE) {
-                            
-                            int buffSizeToSend = BUFFER_SIZE;
-                            if (sizeLeftToSend < BUFFER_SIZE) {
-                                buffSizeToSend = sizeLeftToSend;
-                            }
-                            
-                            int result = send(client_socket, download_buffer, buffSizeToSend, 0);
-                            if (result < 0) {
-                                //close(client_socket);
-                                cop_error("[network_send_tcp] Send failed: %d.", result);
-                                break;
-                            }
-                            sizeLeftToSend -= BUFFER_SIZE;
-                            // Set start position of sending data
-                            download_buffer = download_buffer + buffSizeToSend;
-                        }
-
-                        cop_debug("[network_send_tcp] Finishing download: Shutdown socket.");
-                        shutdown(client_socket, SHUT_RDWR);
-                        cop_debug("[network_send_tcp] Finishing download: Close socket.");
-                        close(client_socket);
-                        cop_debug("[network_send_tcp] Finishing download: Close file.");
-                        fclose(download_file);
+                        tcp_return_download(client_socket, token);
                         i++;
                         break;
                     }
