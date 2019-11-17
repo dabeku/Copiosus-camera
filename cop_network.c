@@ -422,7 +422,7 @@ static void tcp_return_list_files(int client_socket) {
     while ((entry = readdir(dir)) != NULL) {
         if (contains(entry->d_name, "video_")) {
             FileItem* file_item = malloc(sizeof(FileItem));
-            file_item->file_name = entry->d_name;
+            file_item->file_name = strdup(entry->d_name);
             file_list = list_push(file_list, file_item);
             FILE* file = fopen(entry->d_name, "rb");
             fseek(file, 0, SEEK_END);
