@@ -3,14 +3,17 @@ Your personal, low cost surveillance infrastructure.
 
 Run this code on a Raspberry Pi or Arduino controller and display the video and audio stream in the Copiosus app.
 
-## What is this?
-
-The idea is simple:
+## How does it work?
 
 1. Wait for a SCAN request from Copiosus
 2. Respond with the current state
 3. Copiosus triggers a CONNECT command
 4. Send video and audio stream to Copiosus
+
+## Prerequisites
+
+* FFMpeg: https://github.com/FFmpeg/FFmpeg
+* SDL v2.0: https://www.libsdl.org/
 
 ## Instructions
 
@@ -19,6 +22,10 @@ The idea is simple:
 ```./cop_sender```
 
 ## Run
+
+```./cop_sender -platform=mac|linux|win -cmd=start|list -cam=[name] -mic=[name] -pwd=[password]```
+
+Example:
 
 ```./cop_sender -platform=linux -cmd=start -cam=/dev/video0 -mic=hw:1 -pwd="This-is-Awesome"```
 
@@ -61,11 +68,8 @@ sudo sh -c 'echo 0 > /sys/class/leds/led1/brightness'
 
 Copiosus: Mac
 
-Camera: Raspberry with camera and USB mic
+Raspberry Pi
 
-## Play raw mic files
+Camera: kuman, model number: SC15-Webcams-UK
 
-```
-ffplay -f f32le -channel_layout 3 -channels 2 raw_before.mic
-ffplay -f s16le -channel_layout 3 -channels 2 -ar 44100 raw_after.mic
-```
+USB mic: Gyvazla
