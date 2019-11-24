@@ -220,10 +220,10 @@ void house_keeping(char* current_file) {
     while ((entry = readdir(dir)) != NULL) {
         if (contains(entry->d_name, "video_")) {
             if (oldest_file == NULL) {
-                oldest_file = entry->d_name;
+                oldest_file = strdup(entry->d_name);
             } else {
                 if (compare(oldest_file, entry->d_name) > 0) {
-                    oldest_file = entry->d_name;
+                    oldest_file = strdup(entry->d_name);
                 }
             }
         }
