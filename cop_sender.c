@@ -158,11 +158,6 @@ void ePipeHandler(int dummy) {
     cop_debug("[ePipeHandler].");
 }
 
-static int interrupt_cb(void *ctx) {
-    cop_debug("[interrupt_cb] Stop due to interrupt poll.");
-    return 0;
-}
-
 static void sendState(broadcast_data* broadcast_data) {
     if (state == 0) {
         const char* msg = concat("STATE IDLE ", senderId);
@@ -419,12 +414,16 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
         // TODO: Add interrupt like in node module (when changing network while cop_sender is running
         // it will remain in state: 3)
         int ret = av_read_frame(pMicFormatCtx, &micPacket);
+        if (ret < 0) {
+            cop_error("[get_audio_frame] av_read_frame returned < 0.");
+            continue;
+        }
         if (micPacket.stream_index == camAudioStreamIndex) {
             int micFrameFinished = 0;
             
             ret = decode_audio(pMicCodecCtx, decoded_frame, &micPacket, &micFrameFinished);
             if (ret < 0) {
-                cop_error("Error in decoding audio frame.");
+                cop_error("[get_audio_frame] Error in decoding audio frame.");
                 av_packet_unref(&micPacket);
                 continue;
             }
@@ -491,6 +490,10 @@ static AVFrame *get_video_frame(OutputStream *ost) {
         // TODO: Add interrupt like in node module (when changing network while cop_sender is running
         // it will remain in state: 3)
         int ret = av_read_frame(pCamFormatCtx, &camPacket);
+        if (ret < 0) {
+            cop_error("[get_video_frame] av_read_frame returned < 0.");
+            continue;
+        }
         if (camPacket.stream_index == camVideoStreamIndex) {
             int camFrameFinished;
             ret = decode_video(pCamCodecCtx, pCamFrame, &camPacket, &camFrameFinished);
