@@ -245,6 +245,13 @@ void proxy_reset() {
     cop_debug("[proxy_reset] Done.");
 }
 
+void proxy_connect(const char* dest_ip, int dest_port) {
+    cop_debug("[proxy_connect] Connect proxy to %s and port %d.", dest_ip, dest_port);
+    dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr.sin_port = htons(dest_port);
+    cop_debug("[proxy_connect] Done.");
+}
+
 void proxy_send_udp(const char* data) {
     //cop_debug("[proxy_send_udp].");
 

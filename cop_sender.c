@@ -1060,11 +1060,20 @@ static int receive_command(void* arg) {
             cop_debug("[receive_command] Received COMMAND: %s", command_data->cmd);
 
             if (equals(command_data->cmd, "CONNECT")) {
-
                 if (USE_PROXY) {
-                    proxy_init(command_data->ip, command_data->port, encryptionPwd);
+                    proxy_connect(command_data->ip, command_data->port);
+                    // Update previous state with new IP for 'send to'
+                    changeState(state);
+                } else {
+                    cop_debug("[receive_command] TODO: Implement me.");
+                }
+            } else if (equals(command_data->cmd, "START")) {
+                cop_debug("[receive_command] Start");
+                if (USE_PROXY) {
+                    proxy_init(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY, encryptionPwd);
                     SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
-                    char* url = concat("udp://", LOCALHOST_IP);
+                    char* url = "udp://";
+                    url = concat(url, LOCALHOST_IP);
                     url = concat(url, ":");
                     url = concat(url, int_to_str(PORT_PROXY_LISTEN));
                     url = concat(url, MPEG_TS_OPTIONS);
@@ -1076,8 +1085,8 @@ static int receive_command(void* arg) {
                     url = concat(url, MPEG_TS_OPTIONS);
                     sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
                 }
-            } else if (equals(command_data->cmd, "DISCONNECT")) {
-                cop_debug("[receive_command] Do disconnect");
+            } else if (equals(command_data->cmd, "STOP")) {
+                cop_debug("[receive_command] Stop");
                 sender_stop();
             } else if (equals(command_data->cmd, "DELETE")) {
                 cop_debug("[receive_command] Delete");
@@ -1322,9 +1331,7 @@ int main(int argc, char* argv[]) {
         SDL_CreateThread(receive_command, "receive_command", NULL);
 
         // Store stream by using proxy when starting app
-
-        // TODO: Make port more reasonable
-        proxy_init(LOCALHOST_IP, 9999, encryptionPwd);
+        proxy_init(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY, encryptionPwd);
         SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
         SDL_CreateThread(network_receive_tcp, "network_receive_tcp", NULL);
         char* url = "udp://";
