@@ -1,4 +1,4 @@
-# Camera for Copiosus
+# Video and audio streaming for Copiosus
 Your personal, low cost, video and audio streaming infrastructure.
 
 Run this code on a Raspberry Pi controller on your local network and display the video and audio stream in the Copiosus app.
