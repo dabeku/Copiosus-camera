@@ -76,6 +76,10 @@ USB mic: Gyvazla
 
 ## Troubleshooting
 
+### No video after pressing Connect
+
+Please verify that your password is set and correct.
+
 ### Installation of WiFi dongle
 
 ```dmesg | more```
