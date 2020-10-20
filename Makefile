@@ -36,7 +36,7 @@ cop_list.o: cop_list.c cop_list.h
 	$(CC) $(CFLAGS) -c cop_list.c
 
 cop_sender: cop_sender.o
-	gcc cop_sender.o cop_utility.o cop_network.o cop_list.o -o cop_sender $(CFLAGS) $(LDLIBS)
+	gcc cop_sender.o cop_utility.o cop_network.o cop_list.o -o cop_sender $(CFLAGS) $(LDLIBS) -latomic
 
 clean-test:
 	$(RM) test.*

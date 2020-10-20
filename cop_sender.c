@@ -35,7 +35,7 @@
 
 #define CFG_WIDTH 640
 #define CFG_HEIGHT 480
-#define CFG_FRAME_RATE 10
+#define CFG_FRAME_RATE 30
 
 static const char* LOCALHOST_IP = "127.0.0.1";
 static const char* MPEG_TS_OPTIONS = "?pkt_size=1472";
@@ -109,7 +109,10 @@ typedef struct OutputStream {
 
     AVFrame *frame;
 
-    //struct SwsContext *sws_ctx;
+    /* Bitstream context: This is needed to add SPS and PPS information to
+     * all I frames in h264 stream. This is needed so we can start viewing
+     * a stream in the middle instead of always from the beginning */
+    AVBSFContext *bsf_ctx;
 } OutputStream;
 
 typedef struct Container {
@@ -233,10 +236,8 @@ static int encode_video(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, in
     return encode(avctx, frame, pkt, got_frame);
 }
 
-static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt) {
+static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt, AVBSFContext* bsf_ctx) {
     
-    /* rescale output packet timestamp values from codec to stream timebase */
-    //av_packet_rescale_ts(pkt, *time_base, st->time_base);
     pkt->stream_index = st->index;
     
     if (st->index == 1) {
@@ -246,14 +247,20 @@ static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AV
     //cop_debug("PTS (stream: %d): %lld", st->index, pkt->pts);
 
     SDL_LockMutex(write_mutex);
-    /* Write the compressed frame to the media file. */
-    //log_packet(fmt_ctx, pkt);
-//    return av_interleaved_write_frame(fmt_ctx, pkt);
-    int result = av_write_frame(fmt_ctx, pkt);
+
+    int result = av_bsf_send_packet(bsf_ctx, pkt);
+    
+    if (result < 0) {
+        cop_error("[write_frame] Could not send packet to bsf: %d.", result);
+        return result;
+    }
+    while ((result = av_bsf_receive_packet(bsf_ctx, pkt)) >= 0) {
+        av_interleaved_write_frame(fmt_ctx, pkt);
+    }
     
     SDL_UnlockMutex(write_mutex);
     
-    return result;
+    return STATUS_CODE_OK;
 }
 
 // Add an output stream
@@ -261,10 +268,28 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
     AVCodecContext *c = NULL;
     int i;
 
-    /* find the encoder */
-    *codec = avcodec_find_encoder(codec_id);
+    // Find the codec
+    if (codec_id == AV_CODEC_ID_H264) {
+        *codec = avcodec_find_encoder_by_name("h264_omx");
+    } else {
+        *codec = avcodec_find_encoder(codec_id);
+    }
+    
     if (!(*codec)) {
         cop_error("[add_stream] Could not find encoder for '%s'.", avcodec_get_name(codec_id));
+        return STATUS_CODE_NOK;
+    }
+
+    // Add -bsf:v dump_extra so h264 stream adds SPS and PPS to I frames
+    const AVBitStreamFilter* filter = av_bsf_get_by_name("dump_extra");
+    if (!filter) {
+        cop_error("Filter dump_extra not found.\n");
+        return STATUS_CODE_NOK;
+    }
+
+    int ret = av_bsf_alloc(filter, &ost->bsf_ctx);
+    if (ret < 0) {
+        cop_error("Filter dump_extra not allocated.\n");
         return STATUS_CODE_NOK;
     }
 
@@ -342,10 +367,11 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
         break;
     }
 
-    /* Some formats want stream headers to be separate. */
-    if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
-        c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-    }
+
+    /* We need -flags:v +global_header so that h264_omx can
+     * add SPS and PPS information to I frame header so we
+     * can join the stream in the middle */
+    c->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     
     return STATUS_CODE_OK;
 }
@@ -541,7 +567,7 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost) {
     }
 
     if (got_packet) {
-        ret = write_frame(oc, &c->time_base, ost->st, &pkt);
+        ret = write_frame(oc, &c->time_base, ost->st, &pkt, ost->bsf_ctx);
         if (ret < 0) {
             cop_error("[write_audio_frame] Error while writing audio frame: %s.", av_err2str(ret));
             return STATUS_CODE_NOK;
@@ -593,7 +619,7 @@ static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     }
     
     if (got_packet) {
-        ret = write_frame(oc, &c->time_base, ost->st, &pkt);
+        ret = write_frame(oc, &c->time_base, ost->st, &pkt, ost->bsf_ctx);
         av_packet_unref(&pkt);
     } else {
         ret = 0;
@@ -806,8 +832,7 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     // Add the audio and video streams.
     if (outputFormat->video_codec != AV_CODEC_ID_NONE && pCamName != NULL) {
         // Default: outputFormat->video_codec (=2, AV_CODEC_ID_MPEG2VIDEO) instead of AV_CODEC_ID_H264 (=28)
-        //add_stream(&video_st, outputContext, &video_codec, AV_CODEC_ID_H264);
-        add_stream(video_st, outputContext, &video_codec, AV_CODEC_ID_MPEG2VIDEO);
+        add_stream(video_st, outputContext, &video_codec, AV_CODEC_ID_H264);
         have_video = 1;
     }
     if (outputFormat->audio_codec != AV_CODEC_ID_NONE && pMicName != NULL) {
@@ -864,7 +889,7 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
     //av_dict_set(&pCamOpt, "timeout", "5", 0); 
     //av_dict_set(&pCamOpt, "stimeout", "5", 0); 
-
+    
     ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
     if (ret != 0) {
         cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
@@ -1156,6 +1181,8 @@ void list_devices() {
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera"
  * ./cop_sender -platform=mac -cmd=start -cam="Capture screen 0" -mic=":Built-in Microphone"
+ * 
+ * ./ffmpeg -f avfoundation -framerate 30 -i 0 -c:v h264 -flags:v +global_header -bsf:v dump_extra -f rawvideo udp://127.0.0.1:1234
  */
 int main(int argc, char* argv[]) {
 
