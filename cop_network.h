@@ -47,8 +47,9 @@ typedef struct command_data {
 } command_data;
 
 broadcast_data* network_receive_udp_broadcast(int port);
-void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_data);
 command_data* network_receive_udp(int listen_port);
+
+void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_data);
 
 // Close proxy related stuff
 void proxy_close();

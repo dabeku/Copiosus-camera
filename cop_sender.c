@@ -165,26 +165,26 @@ static void sendState(broadcast_data* broadcast_data) {
     if (state == 0) {
         const char* msg = concat("STATE IDLE ", senderId);
         size_t msg_length = strlen(msg);
-        network_send_udp(msg, msg_length, broadcast_data);
+        network_send_tcp(msg, msg_length, broadcast_data);
     } else if (state == 1) {
         const char* msg = concat("STATE INITIALIZING ", senderId);
         size_t msg_length = strlen(msg);
-        network_send_udp(msg, msg_length, broadcast_data);
+        network_send_tcp(msg, msg_length, broadcast_data);
     } else if (state == 2) {
         const char* ipSendTo = get_sendto_ip();
         const char* msg = concat("STATE CONNECTED;", ipSendTo);
         msg = concat(msg, " ");
         msg = concat(msg, senderId);
         size_t msg_length = strlen(msg);
-        network_send_udp(msg, msg_length, broadcast_data);
+        network_send_tcp(msg, msg_length, broadcast_data);
     } else if (state == 3) {
         const char* msg = concat("STATE DISCONNECTING ", senderId);
         size_t msg_length = strlen(msg);
-        network_send_udp(msg, msg_length, broadcast_data);
+        network_send_tcp(msg, msg_length, broadcast_data);
     } else {
         const char* msg = concat("STATE UNKNOWN ", senderId);
         size_t msg_length = strlen(msg);
-        network_send_udp(msg, msg_length, broadcast_data);
+        network_send_tcp(msg, msg_length, broadcast_data);
     }
 }
 
@@ -271,6 +271,10 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
     // Find the codec
     if (codec_id == AV_CODEC_ID_H264) {
         *codec = avcodec_find_encoder_by_name("h264_omx");
+        if (!(*codec)) {
+            cop_debug("[add_stream] Could not find encoder h264_omx. Try software encoder instead.");
+            *codec = avcodec_find_encoder(codec_id);
+        }
     } else {
         *codec = avcodec_find_encoder(codec_id);
     }
@@ -513,11 +517,14 @@ static AVFrame *get_video_frame(OutputStream *ost) {
     AVCodecContext *c = ost->enc;
     
     while (isVideoQuit == 0) {
-        // TODO: Add interrupt like in node module (when changing network while cop_sender is running
-        // it will remain in state: 3)
         int ret = av_read_frame(pCamFormatCtx, &camPacket);
+        // On mac we will get -35 = EAGAIN since frame not available yet: Just wait for next frame
+        if (ret == AVERROR(EAGAIN)) {
+            usleep(100);
+            continue;
+        }
         if (ret < 0) {
-            cop_error("[get_video_frame] av_read_frame returned < 0.");
+            cop_error("[get_video_frame] av_read_frame returned: %d.", ret);
             continue;
         }
         if (camPacket.stream_index == camVideoStreamIndex) {

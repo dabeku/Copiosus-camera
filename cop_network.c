@@ -150,40 +150,42 @@ command_data* network_receive_udp(int listen_port) {
     return data;
 }
 
-void network_send_udp(const void *data, size_t size, broadcast_data* broadcast_data) {
-    cop_debug("[network_send_udp].");
+void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_data) {
 
-    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s < 0) {
-        cop_error("[network_send_udp] Could not create socket.");
-        exit(-1);
-    }
-    
-    struct sockaddr_in addr;
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = inet_addr(broadcast_data->src_ip);
-    addr.sin_port = htons(PORT_LISTEN_SERVER);
-    
-    cop_debug("[network_send_udp] Send data with length: %zu.", size);
-    
-    int sizeLeftToSend = size;
-    for (int i = 0; i < size; i+=BUFFER_SIZE) {
-        
-        int buffSizeToSend = BUFFER_SIZE;
-        if (sizeLeftToSend < BUFFER_SIZE) {
-            buffSizeToSend = sizeLeftToSend;
-        }
-        cop_debug("[network_send_udp] Send: %d bytes to %s:%d", buffSizeToSend, broadcast_data->src_ip, PORT_LISTEN_SERVER);
-        
-        int result = sendto(s, data, buffSizeToSend, 0, (struct sockaddr *)&addr, sizeof(addr));
-        if (result < 0) {
-            cop_error("[network_send_udp] Could not send data. Result: %d.", result);
-            exit(-1);
-        }
-        sizeLeftToSend -= BUFFER_SIZE;
+    cop_debug("[network_send_tcp] Send data with length: %zu.", size);
 
-        data = data + buffSizeToSend;
+    int send_tcp_socket; 
+    struct sockaddr_in serv_addr; 
+  
+    // socket create and varification 
+    send_tcp_socket = socket(AF_INET, SOCK_STREAM, 0); 
+    if (send_tcp_socket < 0) {
+        cop_error("[network_send_tcp] Could not create socket.");
+        return;
     }
+
+    cop_debug("[network_send_tcp] Socket successfully created.");
+    bzero(&serv_addr, sizeof(serv_addr)); 
+  
+    // assign IP, PORT 
+    serv_addr.sin_family = AF_INET; 
+    serv_addr.sin_addr.s_addr = inet_addr(broadcast_data->src_ip); 
+    serv_addr.sin_port = htons(PORT_LISTEN_SERVER); 
+  
+    // connect the client socket to server socket 
+    if (connect(send_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) != 0) { 
+        cop_error("[network_send_tcp] Connection with the server failed."); 
+        return;
+    }
+  
+    // function for chat 
+    int result = send(send_tcp_socket, data, size, 0);
+    if (result < 0) {
+        cop_error("[network_send_tcp] Send failed: %d.", result);
+        return;
+    }
+
+    close(send_tcp_socket); 
 }
 
 void proxy_close() {
