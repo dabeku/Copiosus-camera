@@ -72,7 +72,10 @@ Disable it  to prevent WiFi sleep
 
 Add the following line before exit 0:
 
-```sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 -mic=hw:1 -pwd="this-is-a-password" >> /home/pi/Documents/log.txt &```
+```
+sudo iwconfig wlan0 power off
+sudo /home/pi/Documents/Copiosus-camera/cop_sender -platform=linux -cmd=start -cam=/dev/video0 -mic=hw:1 -pwd="this-is-a-password" >> /home/pi/Documents/log.txt &
+```
 
 ## Disable all LEDs
 
