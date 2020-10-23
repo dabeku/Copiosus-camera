@@ -15,6 +15,23 @@ Use it as baby phone, surveillance of your property, etc.
 ## Prerequisites
 
 * FFMpeg: https://github.com/FFmpeg/FFmpeg
+
+Enable x264 encoder
+```
+git clone https://code.videolan.org/videolan/x264
+./configure --enable-static
+make
+sudo make install
+```
+
+Enable OMX (hardware accelerated encoding for h264)
+```
+git clone git://source.ffmpeg.org/ffmpeg
+./configure --extra-ldflags="-latomic" --enable-gpl --enable-libx264 --enable-omx --enable-omx-rpi
+make
+sudo make install
+```
+
 * SDL v2.0: https://www.libsdl.org/
 
 ## Instructions
@@ -38,6 +55,16 @@ List connected devices:
 * Windows: ```ffmpeg -list_devices true -f dshow -i dummy```
 * Mac: ```ffmpeg -f avfoundation -list_devices true -i ""```
 * Linux: ```v4l2-ctl --list-devices```
+
+## Disable WiFi power management
+
+Check status of Power Management:on
+
+```sudo iwconfig wlan0```
+
+Disable it  to prevent WiFi sleep
+
+```sudo iwconfig wlan0 power off```
 
 ## Run when starting
 
