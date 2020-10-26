@@ -54,9 +54,9 @@ static char* senderId = NULL;
 // 1 = initializing
 // 2 = connected
 // 3 = disconnecting
-static int state = 0;
+int state = 0;
 
-static broadcast_data* last_broadcast_data = NULL;
+client_data* last_client_data = NULL;
 
 // Config section
 int cfg_framerate = 0;
@@ -161,33 +161,6 @@ void ePipeHandler(int dummy) {
     cop_debug("[ePipeHandler].");
 }
 
-static void sendState(broadcast_data* broadcast_data) {
-    if (state == 0) {
-        const char* msg = concat("STATE IDLE ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, broadcast_data);
-    } else if (state == 1) {
-        const char* msg = concat("STATE INITIALIZING ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, broadcast_data);
-    } else if (state == 2) {
-        const char* ipSendTo = get_sendto_ip();
-        const char* msg = concat("STATE CONNECTED;", ipSendTo);
-        msg = concat(msg, " ");
-        msg = concat(msg, senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, broadcast_data);
-    } else if (state == 3) {
-        const char* msg = concat("STATE DISCONNECTING ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, broadcast_data);
-    } else {
-        const char* msg = concat("STATE UNKNOWN ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, broadcast_data);
-    }
-}
-
 /*
  * 0 = IDLE,
  * 1 = INITIALIZING,
@@ -198,30 +171,9 @@ static void sendState(broadcast_data* broadcast_data) {
 static void changeState(int newState) {
     state = newState;
 
-    if (last_broadcast_data != NULL) {
-        sendState(last_broadcast_data);
+    if (last_client_data != NULL) {
+        network_send_state(senderId);
     }
-}
-
-static int receive_broadcast(void* arg) {
-    cop_debug("[receive_broadcast].");
-    while (quit == 0) {
-        broadcast_data* broadcast_data = network_receive_udp_broadcast(PORT_SCAN_BROADCAST);
-        if (broadcast_data != NULL) {
-            if (equals(broadcast_data->buffer, "SCAN")) {
-                last_broadcast_data = broadcast_data;
-                sendState(broadcast_data);
-            } else {
-                cop_debug("[receive_broadcast] IGNORE: %s", broadcast_data->buffer);
-            }
-        } else {
-            // Sleep a little bit so we don't flood the logs
-            sleep(1);
-        }
-    }
-
-    cop_debug("[receive_broadcast] Done.");
-    return 0;
 }
 
 static int decode_video(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame) {
@@ -803,19 +755,14 @@ void sender_stop() {
     cop_debug("[sender_stop] Done.");
 }
 
-int sender_initialize(char* url, int width, int height, int framerate) {
+int sender_initialize(char* url) {
     cop_debug("[sender_initialize].");
 
     changeState(1);
 
     isAudioQuit = 0;
     isVideoQuit = 0;
-    
-    // Config section
-    cfg_framerate = framerate;
-    cfg_width = width;
-    cfg_height = height;
-    
+
     Container *container = NULL;
     
     AVOutputFormat *outputFormat = NULL;
@@ -892,10 +839,8 @@ int sender_initialize(char* url, int width, int height, int framerate) {
     } else {
         pCamInputFormat = av_find_input_format("avfoundation");
     }
-    av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(width), "x"), int_to_str(height)), 0);
-    av_dict_set(&pCamOpt, "framerate", int_to_str(framerate), 0);
-    //av_dict_set(&pCamOpt, "timeout", "5", 0); 
-    //av_dict_set(&pCamOpt, "stimeout", "5", 0); 
+    av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(cfg_width), "x"), int_to_str(cfg_height)), 0);
+    av_dict_set(&pCamOpt, "framerate", int_to_str(cfg_framerate), 0);
     
     ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
     if (ret != 0) {
@@ -1112,13 +1057,13 @@ static int receive_command(void* arg) {
                     url = concat(url, ":");
                     url = concat(url, int_to_str(PORT_PROXY_LISTEN));
                     url = concat(url, MPEG_TS_OPTIONS);
-                    sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+                    sender_initialize(url);
                 } else {
                     char* url = concat("udp://", command_data->ip);
                     url = concat(url, ":");
                     url = concat(url, int_to_str(command_data->port));
                     url = concat(url, MPEG_TS_OPTIONS);
-                    sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+                    sender_initialize(url);
                 }
             } else if (equals(command_data->cmd, "STOP")) {
                 cop_debug("[receive_command] Stop");
@@ -1186,6 +1131,7 @@ void list_devices() {
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone" -pwd="do-IT-my-way"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":AK5371" -pwd="do-IT-my-way"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -mic=":Built-in Microphone"
+ * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera" -width="960" -height="480" -framerate="30"
  * ./cop_sender -platform=mac -cmd=start -cam="FaceTime HD Camera"
  * ./cop_sender -platform=mac -cmd=start -cam="Capture screen 0" -mic=":Built-in Microphone"
  * 
@@ -1203,12 +1149,18 @@ int main(int argc, char* argv[]) {
     char* cam = NULL;
     char* mic = NULL;
     char* pwd = NULL;
+    char* width = NULL;
+    char* height = NULL;
+    char* framerate = NULL;
 
     bool isPlatform = false;
     bool isCmd = false;
     bool isCam = false;
     bool isMic = false;
     bool isPwd = false;
+    bool isWidth = false;
+    bool isHeight = false;
+    bool isFramerate = false;
 
     for (int i = 1; i < argc; i++) {
         char* param = argv[i];
@@ -1255,6 +1207,30 @@ int main(int argc, char* argv[]) {
             if (equals(token, "-pwd")) {
                 isPwd = true;
             }
+
+            if (isWidth) {
+                width = token;
+                isWidth = false;
+            }
+            if (equals(token, "-width")) {
+                isWidth = true;
+            }
+
+            if (isHeight) {
+                height = token;
+                isHeight = false;
+            }
+            if (equals(token, "-height")) {
+                isHeight = true;
+            }
+
+            if (isFramerate) {
+                framerate = token;
+                isFramerate = false;
+            }
+            if (equals(token, "-framerate")) {
+                isFramerate = true;
+            }
         }
     }
 
@@ -1294,6 +1270,30 @@ int main(int argc, char* argv[]) {
         cop_debug("[main] Encryption password set.");
     }
 
+    if (width == NULL) {
+        cop_debug("[main] No width set. Use default: %d.", CFG_WIDTH);
+        cfg_width = CFG_WIDTH;
+    } else {
+        cop_debug("[main] Override width: %s.", width);
+        cfg_width = str_to_int(width);
+    }
+
+    if (height == NULL) {
+        cop_debug("[main] No height set. Use default: %d.", CFG_HEIGHT);
+        cfg_height = CFG_HEIGHT;
+    } else {
+        cop_debug("[main] Override height: %s.", height);
+        cfg_height = str_to_int(height);
+    }
+
+    if (framerate == NULL) {
+        cop_debug("[main] No framerate set. Use default: %d.", CFG_FRAME_RATE);
+        cfg_framerate = CFG_FRAME_RATE;
+    } else {
+        cop_debug("[main] Override framerate: %s.", framerate);
+        cfg_framerate = str_to_int(framerate);
+    }
+
     changeState(0);
 
     senderId = rand_str(32);
@@ -1329,8 +1329,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    //SDL_AddTimer(1000, periodic_cb, NULL);
-
     signal(SIGINT, intHandler);
     
     signal(SIGPIPE, sigPipeHandler);
@@ -1355,28 +1353,31 @@ int main(int argc, char* argv[]) {
                         concat(":", int_to_str(PORT_PROXY_LISTEN))
                     ),
                     MPEG_TS_OPTIONS
-                )
-                , CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+                ));
         } else {
             sender_initialize(
-                concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS),
-                CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE
+                concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS)
             );
         }
     } else {
-        SDL_CreateThread(receive_broadcast, "receive_broadcast", NULL);
         SDL_CreateThread(receive_command, "receive_command", NULL);
 
         // Store stream by using proxy when starting app
         proxy_init(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY, encryptionPwd);
         SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
-        SDL_CreateThread(network_receive_tcp, "network_receive_tcp", NULL);
+
+        system_config* config = malloc(sizeof(system_config));
+        config->senderId = senderId;
+        config->width = cfg_width;
+        config->height = cfg_height;
+
+        SDL_CreateThread(network_receive_tcp, "network_receive_tcp", config);
         char* url = "udp://";
         url = concat(url, LOCALHOST_IP);
         url = concat(url, ":");
         url = concat(url, int_to_str(PORT_PROXY_LISTEN));
         url = concat(url, MPEG_TS_OPTIONS);
-        sender_initialize(url, CFG_WIDTH, CFG_HEIGHT, CFG_FRAME_RATE);
+        sender_initialize(url);
     }
 
     while (quit == 0) {

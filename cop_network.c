@@ -18,7 +18,6 @@
 #include "cop_status_code.h"
 
 static int receive_udp_socket = -1;
-static int receive_udp_broadcast_socket = -1;
 static int receive_tcp_socket = -1;
 
 static int proxy_send_udp_socket = -1;
@@ -35,45 +34,6 @@ typedef struct FileItem {
     char* file_name;
     long file_size_kb;
 } FileItem;
-
-broadcast_data* network_receive_udp_broadcast(int port) {
-    cop_debug("[network_receive_udp_broadcast].");
-
-    struct sockaddr_in addr, si_other;
-    cop_debug("[network_receive_udp_broadcast] Creating socket.");
-    receive_udp_broadcast_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (receive_udp_broadcast_socket == -1) {
-        cop_error("[network_receive_udp_broadcast] Could not create socket.");
-        return NULL;
-    }
-    int broadcast = 1;
-
-    setsockopt(receive_udp_broadcast_socket, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof broadcast);
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    cop_debug("[network_receive_udp_broadcast] Binding socket.");
-    int result = bind(receive_udp_broadcast_socket, (struct sockaddr *)&addr, sizeof(addr));
-    if (result == -1) {
-        cop_error("[network_receive_udp_broadcast] Could not bind socket.");
-        return NULL;
-    }
-
-    char* buffer = malloc(sizeof(char) * BUFFER_SIZE);
-    memset(buffer, '\0', BUFFER_SIZE);
-    unsigned slen=sizeof(addr);
-    cop_debug("[network_receive_udp_broadcast] Receiving data.");
-    recvfrom(receive_udp_broadcast_socket, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&si_other, &slen);
-    close(receive_udp_broadcast_socket);
-
-    broadcast_data* data = malloc(sizeof(broadcast_data));
-    data->buffer = buffer;
-    data->src_ip = inet_ntoa(si_other.sin_addr);
-
-    return data;
-}
 
 command_data* network_receive_udp(int listen_port) {
     cop_debug("[network_receive_udp].");
@@ -150,9 +110,9 @@ command_data* network_receive_udp(int listen_port) {
     return data;
 }
 
-void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_data) {
+static void network_send_tcp(const void *data, size_t size, client_data* client_data) {
 
-    cop_debug("[network_send_tcp] Send data with length: %zu.", size);
+    cop_debug("[network_send_tcp] Send data to %s with length: %zu.", client_data->src_ip, size);
 
     int send_tcp_socket; 
     struct sockaddr_in serv_addr; 
@@ -169,7 +129,7 @@ void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_d
   
     // assign IP, PORT 
     serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_addr.s_addr = inet_addr(broadcast_data->src_ip); 
+    serv_addr.sin_addr.s_addr = inet_addr(client_data->src_ip); 
     serv_addr.sin_port = htons(PORT_LISTEN_SERVER); 
   
     // connect the client socket to server socket 
@@ -186,6 +146,38 @@ void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_d
     }
 
     close(send_tcp_socket); 
+}
+
+void network_send_state(const char* senderId) {
+
+    if (last_client_data == NULL) {
+        return;
+    }
+
+    if (state == 0) {
+        const char* msg = concat("STATE IDLE ", senderId);
+        size_t msg_length = strlen(msg);
+        network_send_tcp(msg, msg_length, last_client_data);
+    } else if (state == 1) {
+        const char* msg = concat("STATE INITIALIZING ", senderId);
+        size_t msg_length = strlen(msg);
+        network_send_tcp(msg, msg_length, last_client_data);
+    } else if (state == 2) {
+        const char* ipSendTo = get_sendto_ip();
+        const char* msg = concat("STATE CONNECTED;", ipSendTo);
+        msg = concat(msg, " ");
+        msg = concat(msg, senderId);
+        size_t msg_length = strlen(msg);
+        network_send_tcp(msg, msg_length, last_client_data);
+    } else if (state == 3) {
+        const char* msg = concat("STATE DISCONNECTING ", senderId);
+        size_t msg_length = strlen(msg);
+        network_send_tcp(msg, msg_length, last_client_data);
+    } else {
+        const char* msg = concat("STATE UNKNOWN ", senderId);
+        size_t msg_length = strlen(msg);
+        network_send_tcp(msg, msg_length, last_client_data);
+    }
 }
 
 void proxy_close() {
@@ -361,6 +353,44 @@ char* get_sendto_ip() {
     return str;
 }
 
+static void tcp_return_scan(int client_socket, const char* senderId, int width, int height) {
+
+    const char* buffer = "SCAN ";
+    buffer = concat(buffer, senderId);
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, int_to_str(width));
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, int_to_str(height));
+
+    int size = strlen(buffer);
+
+    cop_debug("[tcp_return_scan] Send '%d' bytes to caller.", size);
+
+    int sizeLeftToSend = size;
+    
+    for (int j = 0; j < size; j+=BUFFER_SIZE) {
+        
+        int buffSizeToSend = BUFFER_SIZE;
+        if (sizeLeftToSend < BUFFER_SIZE) {
+            buffSizeToSend = sizeLeftToSend;
+        }
+        
+        int result = send(client_socket, buffer, buffSizeToSend, 0);
+        if (result < 0) {
+            cop_error("[tcp_return_scan] Send failed: %d.", result);
+            break;
+        }
+        sizeLeftToSend -= BUFFER_SIZE;
+        // Set start position of sending data
+        buffer = buffer + buffSizeToSend;
+    }
+
+    cop_debug("[tcp_return_scan] Finishing: Shutdown socket.");
+    shutdown(client_socket, SHUT_RDWR);
+    cop_debug("[tcp_return_scan] Finishing: Close socket.");
+    close(client_socket);
+}
+
 static void tcp_return_download(int client_socket, const char* fileName) {
     FILE* download_file = fopen(fileName, "rb");
 
@@ -372,11 +402,11 @@ static void tcp_return_download(int client_socket, const char* fileName) {
     char* download_buffer = malloc(size);
     memset(download_buffer, '\0', size);
 
-    cop_debug("[network_send_tcp] Read %d bytes from file.", size);
+    cop_debug("[tcp_return_download] Read %d bytes from file.", size);
 
     fread(download_buffer, 1, size, download_file);
 
-    cop_debug("[network_send_tcp] Successfully read binary data.");
+    cop_debug("[tcp_return_download] Successfully read binary data.");
 
     int overall = 0;
 
@@ -402,7 +432,7 @@ static void tcp_return_download(int client_socket, const char* fileName) {
         int result = send(client_socket, download_buffer, buffSizeToSend, 0);
         if (result < 0) {
             //close(client_socket);
-            cop_error("[network_send_tcp] Send failed: %d.", result);
+            cop_error("[tcp_return_download] Send failed: %d.", result);
             break;
         }
         sizeLeftToSend -= BUFFER_SIZE;
@@ -410,11 +440,11 @@ static void tcp_return_download(int client_socket, const char* fileName) {
         download_buffer = download_buffer + buffSizeToSend;
     }
 
-    cop_debug("[network_send_tcp] Finishing download: Shutdown socket.");
+    cop_debug("[tcp_return_download] Finishing download: Shutdown socket.");
     shutdown(client_socket, SHUT_RDWR);
-    cop_debug("[network_send_tcp] Finishing download: Close socket.");
+    cop_debug("[tcp_return_download] Finishing download: Close socket.");
     close(client_socket);
-    cop_debug("[network_send_tcp] Finishing download: Close file.");
+    cop_debug("[tcp_return_download] Finishing download: Close file.");
     fclose(download_file);
 }
 
@@ -483,10 +513,12 @@ static void tcp_return_list_files(int client_socket) {
 
 int network_receive_tcp(void* arg) {
 
+    system_config* config = (system_config*)arg;
+
     struct sockaddr_in serv_addr;
     struct sockaddr_in client_addr;
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_port = htons(PORT_LISTEN_TCP_DOWNLOAD);
+    serv_addr.sin_port = htons(PORT_LISTEN_COMMAND_TCP);
     serv_addr.sin_addr.s_addr = INADDR_ANY;
 
     receive_tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
@@ -515,7 +547,7 @@ int network_receive_tcp(void* arg) {
 
         if (client_socket < 0) {
             cop_error("[network_receive_tcp] Accept failed: %d.", client_socket);
-            break;
+            continue;
         }
 
         cop_debug("[network_receive_tcp] Accept incoming connection.");
@@ -541,14 +573,28 @@ int network_receive_tcp(void* arg) {
                 if (i == 0) {
                     cmd = token;
 
+                    // LIST_FILES: Returns list of files
                     if (equals(cmd, "LIST_FILES")) {
                         tcp_return_list_files(client_socket);
+                        break;
+                    }
+
+                    // SCAN: Returns device id, width and height
+                    if (equals(cmd, "SCAN")) {
+                        // Set last client data so we can call its socket
+                        last_client_data = NULL;
+                        last_client_data = malloc(sizeof(client_data));
+                        last_client_data->src_ip = inet_ntoa(client_addr.sin_addr);
+                        cop_debug("Source: %s.", last_client_data->src_ip);
+                        tcp_return_scan(client_socket, config->senderId, config->width, config->height);
+                        network_send_state(config->senderId);
                         break;
                     }
 
                     i++;
                     continue;
                 }
+                // DOWNLOAD: Returns single file
                 if (equals(cmd, "DOWNLOAD")) {
                     if (i == 1) {
                         tcp_return_download(client_socket, token);

@@ -9,8 +9,6 @@
 #ifndef COP_NETWORK_H
 #define COP_NETWORK_H
 
-// Sender listens to this UDP broadcast port for SCAN message
-#define PORT_SCAN_BROADCAST 6080
 // Sender receives incoming CONNECT requests on this port
 #define PORT_COMMAND_CAMERA 6081
 // Sender will send back to this server port
@@ -21,8 +19,8 @@
 // The dummy port the proxy sends to if noone is connected
 #define PORT_PROXY_DESTINATION_DUMMY 6075
 
-// The port the tcp server listens to for downloading a file in network_receive_tcp()
-#define PORT_LISTEN_TCP_DOWNLOAD 6090
+// The port the camera listens to for commands from client
+#define PORT_LISTEN_COMMAND_TCP 6090
 
 // Packet size is 1472 by default which is the limit for VPN packets
 // If this makes problem you can set the pkt_size url parameter like
@@ -30,10 +28,15 @@
 #define PROXY_SEND_BUFFER_SIZE_BYTES 1472
 #define PROXY_BUFFER_SIZE_BYTES 1472
 
-typedef struct broadcast_data {
+typedef struct system_config {
+    const char* senderId;
+    int width;
+    int height;
+} system_config;
+
+typedef struct client_data {
     char* src_ip;
-    char* buffer;
-} broadcast_data;
+} client_data;
 
 typedef struct command_data {
     char* cmd;
@@ -43,13 +46,14 @@ typedef struct command_data {
     int port;
     // DELETE
     char* file_name;
-
 } command_data;
 
-broadcast_data* network_receive_udp_broadcast(int port);
+extern int state;
+extern client_data* last_client_data;
+
 command_data* network_receive_udp(int listen_port);
 
-void network_send_tcp(const void *data, size_t size, broadcast_data* broadcast_data);
+void network_send_state(const char* senderId);
 
 // Close proxy related stuff
 void proxy_close();
