@@ -148,36 +148,38 @@ static void network_send_tcp(const void *data, size_t size, client_data* client_
     close(send_tcp_socket); 
 }
 
+/*
+ * 0 = IDLE
+ * 1 = INITIALIZING
+ * 2 = CONNECTED;ip-send-to
+ * 3 = DISCONNECTING
+ * x = UNKNOWN
+ */
+static const char* get_state_str() {
+    if (state == 0) {
+        return "IDLE";
+    } else if (state == 1) {
+        return "INITIALIZING";
+    } else if (state == 2) {
+        const char* ipSendTo = get_sendto_ip();
+        return concat("CONNECTED;", ipSendTo);
+    } else if (state == 3) {
+        return "DISCONNECTING";
+    }
+    return "UNKNOWN";
+}
+
 void network_send_state(const char* senderId) {
 
     if (last_client_data == NULL) {
         return;
     }
 
-    if (state == 0) {
-        const char* msg = concat("STATE IDLE ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, last_client_data);
-    } else if (state == 1) {
-        const char* msg = concat("STATE INITIALIZING ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, last_client_data);
-    } else if (state == 2) {
-        const char* ipSendTo = get_sendto_ip();
-        const char* msg = concat("STATE CONNECTED;", ipSendTo);
-        msg = concat(msg, " ");
-        msg = concat(msg, senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, last_client_data);
-    } else if (state == 3) {
-        const char* msg = concat("STATE DISCONNECTING ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, last_client_data);
-    } else {
-        const char* msg = concat("STATE UNKNOWN ", senderId);
-        size_t msg_length = strlen(msg);
-        network_send_tcp(msg, msg_length, last_client_data);
-    }
+    const char* msg = concat("STATE ", get_state_str());
+    msg = concat(msg, " ");
+    msg = concat(msg, senderId);
+    size_t msg_length = strlen(msg);
+    network_send_tcp(msg, msg_length, last_client_data);
 }
 
 void proxy_close() {
@@ -353,10 +355,25 @@ char* get_sendto_ip() {
     return str;
 }
 
+static const char* get_hostname() {
+    int MAX_LENGTH = 256;
+    char* hostname = malloc(sizeof(char) * (MAX_LENGTH + 1));
+    int ret = gethostname(hostname, MAX_LENGTH + 1);
+    if (ret != 0) {
+        return "n/a";
+    }
+    return hostname;
+}
+
+// Will return SCAN hostname senderId state width height
 static void tcp_return_scan(int client_socket, const char* senderId, int width, int height) {
 
     const char* buffer = "SCAN ";
+    buffer = concat(buffer, get_hostname());
+    buffer = concat(buffer, " ");
     buffer = concat(buffer, senderId);
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, get_state_str());
     buffer = concat(buffer, " ");
     buffer = concat(buffer, int_to_str(width));
     buffer = concat(buffer, " ");
@@ -587,7 +604,6 @@ int network_receive_tcp(void* arg) {
                         last_client_data->src_ip = inet_ntoa(client_addr.sin_addr);
                         cop_debug("Source: %s.", last_client_data->src_ip);
                         tcp_return_scan(client_socket, config->senderId, config->width, config->height);
-                        network_send_state(config->senderId);
                         break;
                     }
 
