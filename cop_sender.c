@@ -773,7 +773,7 @@ int sender_initialize(char* url) {
     have_audio = 0;
     AVDictionary *opt = NULL;
 
-    // Allocate the output media context (mpeg-ts container)
+    // Allocate the output media context
     avformat_alloc_output_context2(&outputContext, NULL, "mpegts", url);
     if (!outputContext) {
         cop_error("[sender_initialize] Can't allocate output context.");
