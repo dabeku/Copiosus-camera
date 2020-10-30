@@ -14,6 +14,16 @@ Use it as baby phone, surveillance of your property, etc.
 
 ## Prerequisites
 
+* Video:
+```
+sudo raspi-config
+```
+
+* Audio:
+```
+sudo apt-get install libasound2-dev
+```
+
 * FFMpeg: https://github.com/FFmpeg/FFmpeg
 
 Enable x264 encoder
@@ -27,7 +37,7 @@ sudo make install
 Enable OMX (hardware accelerated encoding for h264)
 ```
 git clone git://source.ffmpeg.org/ffmpeg
-./configure --extra-ldflags="-latomic" --enable-gpl --enable-libx264 --enable-omx --enable-omx-rpi
+./configure --extra-ldflags="-latomic" --enable-gpl --enable-omx --enable-omx-rpi
 make
 sudo make install
 ```
@@ -55,6 +65,11 @@ List connected devices:
 * Windows: ```ffmpeg -list_devices true -f dshow -i dummy```
 * Mac: ```ffmpeg -f avfoundation -list_devices true -i ""```
 * Linux: ```v4l2-ctl --list-devices```
+
+List audio devices:
+
+* ```arecord -l```
+will list all capture devices. Note that card x is hw:x
 
 ## Disable WiFi power management
 
