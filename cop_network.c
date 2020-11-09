@@ -20,15 +20,22 @@
 static int receive_udp_socket = -1;
 static int receive_tcp_socket = -1;
 
-static int proxy_send_udp_socket = -1;
-static int proxy_receive_udp_socket = -1;
-static struct sockaddr_in dest_addr;
-static bool isNetworkRunning = false;
-static FILE* video_file = NULL;
-static char* video_file_name = NULL;
+static int proxy_send_udp_socket_cam = -1;
+static int proxy_send_udp_socket_mic = -1;
+static int proxy_receive_udp_socket_cam = -1;
+static int proxy_receive_udp_socket_mic = -1;
+static struct sockaddr_in dest_addr_cam;
+static struct sockaddr_in dest_addr_mic;
+static bool is_network_running_cam = false;
+static bool is_network_running_mic = false;
+static FILE* file_cam = NULL;
+static char* file_cam_name = NULL;
+static FILE* file_mic = NULL;
+static char* file_mic_name = NULL;
 
 // Set by main() args
-static const char* encryptionPwd = NULL;
+static const char* encryption_pwd_cam = NULL;
+static const char* encryption_pwd_mic = NULL;
 
 typedef struct FileItem {
     char* file_name;
@@ -80,6 +87,7 @@ command_data* network_receive_udp(int listen_port) {
             i++;
             continue;
         }
+        // CONNECT UDP <ip> <port-cam> <port-mic>
         if (equals(data->cmd, "CONNECT")) {
             if (i == 1) {
                 data->protocol = token;
@@ -92,7 +100,12 @@ command_data* network_receive_udp(int listen_port) {
                 continue;
             }
             if (i == 3) {
-                data->port = str_to_int(token);
+                data->port_cam = str_to_int(token);
+                i++;
+                continue;
+            }
+            if (i == 4) {
+                data->port_mic = str_to_int(token);
                 i++;
                 continue;
             }
@@ -183,19 +196,32 @@ void network_send_state(const char* senderId) {
 }
 
 void proxy_close() {
-    if (proxy_send_udp_socket < 0) {
-        cop_error("[proxy_close] Socket send not open: %d.", proxy_send_udp_socket);
+    if (proxy_send_udp_socket_cam < 0) {
+        cop_error("[proxy_close] cam: Socket send not open: %d.", proxy_send_udp_socket_cam);
     } else {
-        cop_debug("[proxy_close] Close 'send-udp-socket'.");
-        close(proxy_send_udp_socket);
+        cop_debug("[proxy_close] cam: Close 'send-udp-socket'.");
+        close(proxy_send_udp_socket_cam);
     }
-    if (proxy_receive_udp_socket < 0) {
-        cop_error("[proxy_close] Socket receive not open: %d.", proxy_receive_udp_socket);
+    if (proxy_send_udp_socket_mic < 0) {
+        cop_error("[proxy_close] mic: Socket send not open: %d.", proxy_send_udp_socket_mic);
     } else {
-        cop_debug("[proxy_close] Close 'receive-udp-socket'.");
-        close(proxy_receive_udp_socket);
+        cop_debug("[proxy_close] mic: Close 'send-udp-socket'.");
+        close(proxy_send_udp_socket_mic);
     }
-    isNetworkRunning = false;
+    if (proxy_receive_udp_socket_cam < 0) {
+        cop_error("[proxy_close] cam: Socket receive not open: %d.", proxy_receive_udp_socket_cam);
+    } else {
+        cop_debug("[proxy_close] cam: Close 'receive-udp-socket'.");
+        close(proxy_receive_udp_socket_cam);
+    }
+    is_network_running_cam = false;
+    if (proxy_receive_udp_socket_mic < 0) {
+        cop_error("[proxy_close] mic: Socket receive not open: %d.", proxy_receive_udp_socket_mic);
+    } else {
+        cop_debug("[proxy_close] mic: Close 'receive-udp-socket'.");
+        close(proxy_receive_udp_socket_mic);
+    }
+    is_network_running_mic = false;
 }
 
 void server_close() {
@@ -207,78 +233,121 @@ void server_close() {
     }
 }
 
-void set_next_video_file() {
-    video_file_name = "video_";
-    video_file_name = concat(video_file_name, get_timestamp());
-    video_file_name = concat(video_file_name, ".ts");
-    cop_debug("[set_next_video_file] New video file: %s.", video_file_name);
-    video_file = fopen(video_file_name, "ab");
+static void set_next_file_cam() {
+    file_cam_name = "video_";
+    file_cam_name = concat(file_cam_name, get_timestamp());
+    file_cam_name = concat(file_cam_name, ".ts");
+    cop_debug("[set_next_file_cam] New video file: %s.", file_cam_name);
+    file_cam = fopen(file_cam_name, "ab");
 }
 
-void proxy_init(const char* dest_ip, int dest_port, const char* pwd) {
-    cop_debug("[proxy_init] %s %d.", dest_ip, dest_port);
-    proxy_send_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (proxy_send_udp_socket < 0) {
-        cop_error("[proxy_init] Could not create socket: %d.", proxy_send_udp_socket);
+static void set_next_file_mic() {
+    file_mic_name = "audio_";
+    file_mic_name = concat(file_mic_name, get_timestamp());
+    file_mic_name = concat(file_mic_name, ".ts");
+    cop_debug("[set_next_file_mic] New audio file: %s.", file_mic_name);
+    file_mic = fopen(file_mic_name, "ab");
+}
+
+void proxy_init_cam(const char* dest_ip, int dest_port, const char* pwd) {
+    cop_debug("[proxy_init_cam] %s %d.", dest_ip, dest_port);
+    proxy_send_udp_socket_cam = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (proxy_send_udp_socket_cam < 0) {
+        cop_error("[proxy_init_cam] Could not create socket: %d.", proxy_send_udp_socket_cam);
         return;
     }
-    dest_addr.sin_family = AF_INET;
-    dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr.sin_port = htons(dest_port);
-    encryptionPwd = pwd;
-    set_next_video_file();
+    dest_addr_cam.sin_family = AF_INET;
+    dest_addr_cam.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr_cam.sin_port = htons(dest_port);
+    encryption_pwd_cam = pwd;
+    set_next_file_cam();
 
-    isNetworkRunning = true;
+    is_network_running_cam = true;
 
-    cop_debug("[proxy_init] Done.");
+    cop_debug("[proxy_init_cam] Done.");
+}
+
+void proxy_init_mic(const char* dest_ip, int dest_port, const char* pwd) {
+    cop_debug("[proxy_init_mic] %s %d.", dest_ip, dest_port);
+    proxy_send_udp_socket_mic = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (proxy_send_udp_socket_mic < 0) {
+        cop_error("[proxy_init_mic] Could not create socket: %d.", proxy_send_udp_socket_mic);
+        return;
+    }
+    dest_addr_mic.sin_family = AF_INET;
+    dest_addr_mic.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr_mic.sin_port = htons(dest_port);
+    encryption_pwd_mic = pwd;
+    set_next_file_mic();
+
+    is_network_running_mic = true;
+
+    cop_debug("[proxy_init_mic] Done.");
 }
 
 // We only want to redirect output to localhost again
-void proxy_reset() {
-    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY);
-    dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    dest_addr.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY);
+void proxy_reset_cam() {
+    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_CAM);
+    dest_addr_cam.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dest_addr_cam.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY_CAM);
+    cop_debug("[proxy_reset] Done.");
+}
+void proxy_reset_mic() {
+    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_MIC);
+    dest_addr_mic.sin_addr.s_addr = inet_addr("127.0.0.1");
+    dest_addr_mic.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY_MIC);
     cop_debug("[proxy_reset] Done.");
 }
 
-void proxy_connect(const char* dest_ip, int dest_port) {
-    cop_debug("[proxy_connect] Connect proxy to %s and port %d.", dest_ip, dest_port);
-    dest_addr.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr.sin_port = htons(dest_port);
-    cop_debug("[proxy_connect] Done.");
+
+void proxy_connect_cam(const char* dest_ip, int dest_port) {
+    cop_debug("[proxy_connect_cam] Connect proxy to %s and port %d.", dest_ip, dest_port);
+    dest_addr_cam.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr_cam.sin_port = htons(dest_port);
+    cop_debug("[proxy_connect_cam] Done.");
+}
+void proxy_connect_mic(const char* dest_ip, int dest_port) {
+    cop_debug("[proxy_connect_mic] Connect proxy to %s and port %d.", dest_ip, dest_port);
+    dest_addr_mic.sin_addr.s_addr = inet_addr(dest_ip);
+    dest_addr_mic.sin_port = htons(dest_port);
+    cop_debug("[proxy_connect_mic] Done.");
 }
 
-void proxy_send_udp(const char* data) {
-    //cop_debug("[proxy_send_udp].");
+// Type = 0: cam, 1: mic
+void proxy_send_udp(int type, const char* data) {
 
-    if (proxy_send_udp_socket < 0) {
-        cop_error("[proxy_send_udp] Socket not available: %d", proxy_send_udp_socket);
+    if (type == 0) {
+        if (proxy_send_udp_socket_cam < 0) {
+            cop_error("[proxy_send_udp] cam: Socket not available: %d", proxy_send_udp_socket_cam);
+        }
+        int result = sendto(proxy_send_udp_socket_cam, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr_cam, sizeof(dest_addr_cam));
+        if (result < 0) {
+            cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
+        }
+    } else {
+        if (proxy_send_udp_socket_mic < 0) {
+            cop_error("[proxy_send_udp] mic: Socket not available: %d", proxy_send_udp_socket_mic);
+        }
+        int result = sendto(proxy_send_udp_socket_mic, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr_mic, sizeof(dest_addr_mic));
+        if (result < 0) {
+            cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
+        }
     }
-    //cop_debug("[proxy_send_udp] Send data.");
-
-    int result = sendto(proxy_send_udp_socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
-    if (result < 0) {
-        cop_error("[proxy_send_udp] Could not send data. Result: %d.", result);
-    }
+    
 }
 
-int proxy_receive_udp(void* arg) {
+// Type = 0: cam, 1: mic
+static int proxy_receive_udp(int type, int proxy_receive_udp_socket, int port_proxy_listen) {
 
     struct sockaddr_in addr, si_other;
-    proxy_receive_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (proxy_receive_udp_socket == -1) {
-        cop_error("[proxy_receive_udp] Could not create socket.");
-        return STATUS_CODE_NOK;
-    }
-
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT_PROXY_LISTEN);
+    addr.sin_port = htons(port_proxy_listen);
     addr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    cop_debug("[proxy_receive_udp] Bind to port %d.", PORT_PROXY_LISTEN);
+    cop_debug("[proxy_receive_udp] Bind to port %d.", port_proxy_listen);
     int result = bind(proxy_receive_udp_socket, (struct sockaddr *)&addr, sizeof(addr));
     if (result == -1) {
-        cop_error("[proxy_receive_udp] Could not bind socket do %d.", PORT_PROXY_LISTEN);
+        cop_error("[proxy_receive_udp] Could not bind socket do %d.", port_proxy_listen);
         return STATUS_CODE_NOK;
     }
 
@@ -290,7 +359,7 @@ int proxy_receive_udp(void* arg) {
     memset(buffer, '\0', PROXY_BUFFER_SIZE_BYTES);
     unsigned slen=sizeof(addr);
 
-    while (isNetworkRunning) {
+    while ((type == 0 && is_network_running_cam) || (type == 1 && is_network_running_mic)) {
         int read = recvfrom(proxy_receive_udp_socket, buffer, PROXY_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&si_other, &slen);
 
         if (read == -1) {
@@ -306,52 +375,97 @@ int proxy_receive_udp(void* arg) {
             // Buffer is filled
             memcpy(&sendBuffer[sendIndex], buffer, PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
 
-            if (video_file != NULL) {
-                fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, video_file);
-                long size_in_kb = ftell(video_file) / 1024;
-                //cop_debug("File size: %lu.", size_in_kb);
+            // Write to file
+            if (type == 0 && file_cam != NULL) {
+                fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, file_cam);
+                long size_in_kb = ftell(file_cam) / 1024;
                 // Set max size to 250 mb
                 //if (size_in_kb > 1024 * 250) {
                 if (size_in_kb > 1024 * 100) {
-                    fclose(video_file);
-                    set_next_video_file();
+                    fclose(file_cam);
+                    set_next_file_cam();
+                }
+            } else if (type == 1 && file_mic != NULL) {
+                fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, file_mic);
+                long size_in_kb = ftell(file_mic) / 1024;
+                // Set max size to 250 mb
+                //if (size_in_kb > 1024 * 250) {
+                if (size_in_kb > 1024 * 100) {
+                    fclose(file_mic);
+                    set_next_file_mic();
                 }
             }
 
             // Do encryption
-            if (encryptionPwd != NULL) {
-                size_t pwd_length = strlen(encryptionPwd);
+            if (type == 0 && encryption_pwd_cam != NULL) {
+                size_t pwd_length = strlen(encryption_pwd_cam);
                 if (pwd_length > 0) {
                     for(int i = 0; i < PROXY_SEND_BUFFER_SIZE_BYTES; i++) {
-                        sendBuffer[i] = sendBuffer[i] ^ encryptionPwd[i % pwd_length];
+                        sendBuffer[i] = sendBuffer[i] ^ encryption_pwd_cam[i % pwd_length];
+                    }
+                }
+            } else if (type == 1 && encryption_pwd_mic != NULL) {
+                size_t pwd_length = strlen(encryption_pwd_mic);
+                if (pwd_length > 0) {
+                    for(int i = 0; i < PROXY_SEND_BUFFER_SIZE_BYTES; i++) {
+                        sendBuffer[i] = sendBuffer[i] ^ encryption_pwd_mic[i % pwd_length];
                     }
                 }
             }
 
-            proxy_send_udp(sendBuffer);
+            proxy_send_udp(type, sendBuffer);
             memcpy(sendBuffer, &buffer[PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex], read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex));
             sendIndex = read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
         }
     }
 
-    if (video_file != NULL) {
-        fclose(video_file);
+    if (file_cam != NULL) {
+        fclose(file_cam);
     }
-    video_file_name = NULL;
-    video_file = NULL;
+    file_cam_name = NULL;
+    file_cam = NULL;
 
+    if (file_mic != NULL) {
+        fclose(file_mic);
+    }
+    file_mic_name = NULL;
+    file_mic = NULL;
+    
     cop_debug("[proxy_receive_udp] Done.");
 
     return STATUS_CODE_OK;
 }
 
+int proxy_receive_udp_cam(void* arg) {
+    proxy_receive_udp_socket_cam = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (proxy_receive_udp_socket_cam == -1) {
+        cop_error("[proxy_receive_udp_cam] Could not create socket.");
+        return STATUS_CODE_NOK;
+    }
+    return proxy_receive_udp(0, proxy_receive_udp_socket_cam, PORT_PROXY_LISTEN_CAM);
+}
+
+int proxy_receive_udp_mic(void* arg) {
+    proxy_receive_udp_socket_mic = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (proxy_receive_udp_socket_mic == -1) {
+        cop_error("[proxy_receive_udp_mic] Could not create socket.");
+        return STATUS_CODE_NOK;
+    }
+    return proxy_receive_udp(1, proxy_receive_udp_socket_mic, PORT_PROXY_LISTEN_MIC);
+}
+
 char* get_video_file_name() {
-    return video_file_name;
+    return file_cam_name;
+}
+
+char* get_audio_file_name() {
+    return file_mic_name;
 }
 
 char* get_sendto_ip() {
     char* str = malloc(sizeof(char) * INET_ADDRSTRLEN);
-    inet_ntop(AF_INET, &(dest_addr.sin_addr), str, INET_ADDRSTRLEN);
+    // TODO: Assume camera ip endpoint
+    inet_ntop(AF_INET, &(dest_addr_cam.sin_addr), str, INET_ADDRSTRLEN);
     return str;
 }
 
@@ -365,8 +479,8 @@ static const char* get_hostname() {
     return hostname;
 }
 
-// Will return SCAN hostname senderId state width height
-static void tcp_return_scan(int client_socket, const char* senderId, int width, int height) {
+// Will return: SCAN hostname senderId state width height has_video has_audio
+static void tcp_return_scan(int client_socket, const char* senderId, int width, int height, int has_video, int has_audio) {
 
     const char* buffer = "SCAN ";
     buffer = concat(buffer, get_hostname());
@@ -378,6 +492,10 @@ static void tcp_return_scan(int client_socket, const char* senderId, int width, 
     buffer = concat(buffer, int_to_str(width));
     buffer = concat(buffer, " ");
     buffer = concat(buffer, int_to_str(height));
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, int_to_str(has_video));
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, int_to_str(has_audio));
 
     int size = strlen(buffer);
 
@@ -436,11 +554,12 @@ static void tcp_return_download(int client_socket, const char* fileName) {
         }
 
         // Do encryption
-        if (encryptionPwd != NULL) {
-            size_t pwd_length = strlen(encryptionPwd);
+        // TODO: Assume camera password
+        if (encryption_pwd_cam != NULL) {
+            size_t pwd_length = strlen(encryption_pwd_cam);
             if (pwd_length > 0) {
                 for (int i = 0; i < buffSizeToSend; i++) {
-                    download_buffer[i] = download_buffer[i] ^ encryptionPwd[overall % pwd_length];
+                    download_buffer[i] = download_buffer[i] ^ encryption_pwd_cam[overall % pwd_length];
                     overall++;
                 }
             }
@@ -476,7 +595,7 @@ static void tcp_return_list_files(int client_socket) {
     struct list_item* file_list = NULL;
 
     while ((entry = readdir(dir)) != NULL) {
-        if (contains(entry->d_name, "video_")) {
+        if (contains(entry->d_name, "video_") || contains(entry->d_name, "audio_")) {
             FileItem* file_item = malloc(sizeof(FileItem));
             file_item->file_name = strdup(entry->d_name);
             file_list = list_push(file_list, file_item);
@@ -603,7 +722,7 @@ int network_receive_tcp(void* arg) {
                         last_client_data = malloc(sizeof(client_data));
                         last_client_data->src_ip = inet_ntoa(client_addr.sin_addr);
                         cop_debug("Source: %s.", last_client_data->src_ip);
-                        tcp_return_scan(client_socket, config->senderId, config->width, config->height);
+                        tcp_return_scan(client_socket, config->senderId, config->width, config->height, config->has_video, config->has_audio);
                         break;
                     }
 

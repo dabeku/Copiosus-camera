@@ -203,7 +203,11 @@ unsigned long get_available_space_mb(const char* path) {
     return available / 1024;
 }
 
-void house_keeping(char* current_file) {
+/*
+ * Removes oldest files if we need space.
+ * prefix: "video_" or "audio_"
+ */
+void house_keeping(char* current_file, char* prefix) {
 
     if (current_file == NULL) {
         return;
@@ -218,7 +222,7 @@ void house_keeping(char* current_file) {
     char* oldest_file = NULL;
 
     while ((entry = readdir(dir)) != NULL) {
-        if (contains(entry->d_name, "video_")) {
+        if (contains(entry->d_name, prefix)) {
             if (oldest_file == NULL) {
                 oldest_file = strdup(entry->d_name);
             } else {

@@ -118,7 +118,8 @@ typedef struct OutputStream {
 typedef struct Container {
     OutputStream *outputStreamAudio;
     OutputStream *outputStreamVideo;
-    AVFormatContext *formatContext;
+    AVFormatContext *format_context_cam;
+    AVFormatContext *format_context_mic;
 } Container;
 
 typedef struct FileItem {
@@ -127,7 +128,8 @@ typedef struct FileItem {
 } FileItem;
 
 // Used here to free memory when closing app
-AVFormatContext *outputContext = NULL;
+AVFormatContext *output_context_cam = NULL;
+AVFormatContext *output_context_mic = NULL;
 OutputStream *video_st = NULL;
 OutputStream *audio_st = NULL;
 int have_video = 0;
@@ -546,7 +548,8 @@ static void logStats() {
     fps = 0;
 
     if (availableMb < 300) {
-        house_keeping(get_video_file_name());
+        house_keeping(get_video_file_name(), "video_");
+        house_keeping(get_audio_file_name(), "audio_");
     }
 }
 
@@ -592,22 +595,22 @@ static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     return (frame || got_packet) ? 0 : 1;
 }
 
-int write_audio(void *arg) {
-    Container *container = (Container *)arg;
-    while (isAudioQuit == 0) {
-        isAudioProcessing = 1;
-        write_audio_frame(container->formatContext, container->outputStreamAudio);
-        isAudioProcessing = 0;
-    }
-    return STATUS_CODE_OK;
-}
-
 int write_video(void *arg) {
     Container *container = (Container *)arg;
     while (isVideoQuit == 0) {
         isVideoProcessing = 1;
-        write_video_frame(container->formatContext, container->outputStreamVideo);
+        write_video_frame(container->format_context_cam, container->outputStreamVideo);
         isVideoProcessing = 0;
+    }
+    return STATUS_CODE_OK;
+}
+
+int write_audio(void *arg) {
+    Container *container = (Container *)arg;
+    while (isAudioQuit == 0) {
+        isAudioProcessing = 1;
+        write_audio_frame(container->format_context_mic, container->outputStreamAudio);
+        isAudioProcessing = 0;
     }
     return STATUS_CODE_OK;
 }
@@ -693,8 +696,14 @@ void sender_stop() {
 
     proxy_close();
 
-    if (outputContext == NULL) {
-        cop_debug("[sender_stop] Output context not set. Do nothing.");
+    if (output_context_cam == NULL) {
+        cop_debug("[sender_stop] cam: Output context not set. Do nothing.");
+        changeState(0);
+        return;
+    }
+
+    if (output_context_mic == NULL) {
+        cop_debug("[sender_stop] mic: Output context not set. Do nothing.");
         changeState(0);
         return;
     }
@@ -724,29 +733,31 @@ void sender_stop() {
      * close the CodecContexts open when you wrote the header; otherwise
      * av_write_trailer() may try to use memory that was freed on
      * av_codec_close().*/
-    av_write_trailer(outputContext);
+    av_write_trailer(output_context_cam);
+    av_write_trailer(output_context_mic);
 
     if (have_video) {
         cop_debug("[sender_stop] Close video stream.");
-        close_stream(outputContext, video_st);
+        close_stream(output_context_cam, video_st);
         avformat_close_input(&pCamFormatCtx);
     }
     if (have_audio) {
         cop_debug("[sender_stop] Close audio stream.");
-        close_stream(outputContext, audio_st);
+        close_stream(output_context_mic, audio_st);
         // Attention: We may not close the mic context since it's started in main()
         //avformat_close_input(&pMicFormatCtx);
     }
 
     cop_debug("[sender_stop] Close avio.");
 
-    //if (!(outputFormat->flags & AVFMT_NOFILE))
-    avio_closep(&outputContext->pb);
+    avio_closep(&output_context_cam->pb);
+    avio_closep(&output_context_mic->pb);
 
     cop_debug("[sender_stop] Free context.");
 
     /* free the stream */
-    avformat_free_context(outputContext);
+    avformat_free_context(output_context_cam);
+    avformat_free_context(output_context_mic);
 
     cop_debug("[sender_stop] Change state.");
 
@@ -755,7 +766,7 @@ void sender_stop() {
     cop_debug("[sender_stop] Done.");
 }
 
-int sender_initialize(char* url) {
+int sender_initialize(char* url_cam, char* url_mic) {
     cop_debug("[sender_initialize].");
 
     changeState(1);
@@ -765,7 +776,8 @@ int sender_initialize(char* url) {
 
     Container *container = NULL;
     
-    AVOutputFormat *outputFormat = NULL;
+    AVOutputFormat *output_format_cam = NULL;
+    AVOutputFormat *output_format_mic = NULL;
     AVCodec *audio_codec;
     AVCodec *video_codec;
     int ret;
@@ -773,25 +785,33 @@ int sender_initialize(char* url) {
     have_audio = 0;
     AVDictionary *opt = NULL;
 
-    // Allocate the output media context
-    avformat_alloc_output_context2(&outputContext, NULL, "mpegts", url);
-    if (!outputContext) {
-        cop_error("[sender_initialize] Can't allocate output context.");
+    // Allocate the output media context (cam)
+    avformat_alloc_output_context2(&output_context_cam, NULL, "mpegts", url_cam);
+    if (!output_context_cam) {
+        cop_error("[sender_initialize] cam: Can't allocate output context.");
         changeState(0);
         return STATUS_CODE_CANT_ALLOCATE;
     }
+    output_format_cam = output_context_cam->oformat;
 
-    outputFormat = outputContext->oformat;
+    // Allocate the output media context (mic)
+    avformat_alloc_output_context2(&output_context_mic, NULL, "mpegts", url_mic);
+    if (!output_context_mic) {
+        cop_error("[sender_initialize] mic: Can't allocate output context.");
+        changeState(0);
+        return STATUS_CODE_CANT_ALLOCATE;
+    }
+    output_format_mic = output_context_mic->oformat;
 
     // Add the audio and video streams.
-    if (outputFormat->video_codec != AV_CODEC_ID_NONE && pCamName != NULL) {
+    if (output_format_cam->video_codec != AV_CODEC_ID_NONE && pCamName != NULL) {
         // Default: outputFormat->video_codec (=2, AV_CODEC_ID_MPEG2VIDEO) instead of AV_CODEC_ID_H264 (=28)
-        add_stream(video_st, outputContext, &video_codec, AV_CODEC_ID_H264);
+        add_stream(video_st, output_context_cam, &video_codec, AV_CODEC_ID_H264);
         have_video = 1;
     }
-    if (outputFormat->audio_codec != AV_CODEC_ID_NONE && pMicName != NULL) {
+    if (output_format_mic->audio_codec != AV_CODEC_ID_NONE && pMicName != NULL) {
         // Default: outputFormat->audio_codec (=86016) is equal to AV_CODEC_ID_MP2 (=86016)
-        add_stream(audio_st, outputContext, &audio_codec, AV_CODEC_ID_MP2);
+        add_stream(audio_st, output_context_mic, &audio_codec, AV_CODEC_ID_MP2);
         have_audio = 1;
     }
 
@@ -800,30 +820,45 @@ int sender_initialize(char* url) {
     // Now that all the parameters are set, we can open the audio and
     // video codecs and allocate the necessary encode buffers.
     if (have_video) {
-        open_video(outputContext, video_codec, video_st, opt);
+        open_video(output_context_cam, video_codec, video_st, opt);
     }
     if (have_audio) {
-        open_audio(outputContext, audio_codec, audio_st, opt);
+        open_audio(output_context_mic, audio_codec, audio_st, opt);
     }
 
-    av_dump_format(outputContext, 0, url, 1);
+    av_dump_format(output_context_cam, 0, url_cam, 1);
+    av_dump_format(output_context_mic, 0, url_mic, 1);
 
     // Open the output
-    //if (!(outputFormat->flags & AVFMT_NOFILE)) {
-    ret = avio_open(&outputContext->pb, url, AVIO_FLAG_WRITE);
-    if (ret < 0) {
-        cop_error("[sender_initialize] Can't open '%s': %s.", url, av_err2str(ret));
-        changeState(0);
-        return STATUS_CODE_CANT_ALLOCATE;
+    if (have_video) {
+        ret = avio_open(&output_context_cam->pb, url_cam, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            cop_error("[sender_initialize] cam: Can't open '%s': %s.", url_cam, av_err2str(ret));
+            changeState(0);
+            return STATUS_CODE_CANT_ALLOCATE;
+        }
+        // Write the stream header
+        ret = avformat_write_header(output_context_cam, &opt);
+        if (ret < 0) {
+            cop_error("[sender_initialize] cam: Can't write header: %s.", av_err2str(ret));
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
     }
-    //}
+    if (have_audio) {
+        ret = avio_open(&output_context_mic->pb, url_mic, AVIO_FLAG_WRITE);
+        if (ret < 0) {
+            cop_error("[sender_initialize] mic: Can't open '%s': %s.", url_mic, av_err2str(ret));
+            changeState(0);
+            return STATUS_CODE_CANT_ALLOCATE;
+        }
 
-    // Write the stream header
-    ret = avformat_write_header(outputContext, &opt);
-    if (ret < 0) {
-        cop_error("[sender_initialize] Can't write header: %s.", av_err2str(ret));
-        changeState(0);
-        return STATUS_CODE_NOK;
+        ret = avformat_write_header(output_context_mic, &opt);
+        if (ret < 0) {
+            cop_error("[sender_initialize] mic: Can't write header: %s.", av_err2str(ret));
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
     }
     
     /*
@@ -1018,7 +1053,8 @@ int sender_initialize(char* url) {
     container = malloc(sizeof(Container));
     container->outputStreamAudio = audio_st;
     container->outputStreamVideo = video_st;
-    container->formatContext = outputContext;
+    container->format_context_cam = output_context_cam;
+    container->format_context_mic = output_context_mic;
     if (have_video) {
         video_thread = SDL_CreateThread(write_video, "write_video", container);
     }
@@ -1041,7 +1077,8 @@ static int receive_command(void* arg) {
 
             if (equals(command_data->cmd, "CONNECT")) {
                 if (USE_PROXY) {
-                    proxy_connect(command_data->ip, command_data->port);
+                    proxy_connect_cam(command_data->ip, command_data->port_cam);
+                    proxy_connect_mic(command_data->ip, command_data->port_mic);
                     // Update previous state with new IP for 'send to'
                     changeState(state);
                 } else {
@@ -1050,20 +1087,31 @@ static int receive_command(void* arg) {
             } else if (equals(command_data->cmd, "START")) {
                 cop_debug("[receive_command] Start");
                 if (USE_PROXY) {
-                    proxy_init(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY, encryptionPwd);
-                    SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
-                    char* url = "udp://";
-                    url = concat(url, LOCALHOST_IP);
-                    url = concat(url, ":");
-                    url = concat(url, int_to_str(PORT_PROXY_LISTEN));
-                    url = concat(url, MPEG_TS_OPTIONS);
-                    sender_initialize(url);
+                    proxy_init_cam(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_CAM, encryptionPwd);
+                    proxy_init_mic(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_MIC, encryptionPwd);
+                    SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
+                    SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
+                    char* url_cam = "udp://";
+                    url_cam = concat(url_cam, LOCALHOST_IP);
+                    url_cam = concat(url_cam, ":");
+                    url_cam = concat(url_cam, int_to_str(PORT_PROXY_LISTEN_CAM));
+                    url_cam = concat(url_cam, MPEG_TS_OPTIONS);
+                    char* url_mic = "udp://";
+                    url_mic = concat(url_mic, LOCALHOST_IP);
+                    url_mic = concat(url_mic, ":");
+                    url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
+                    url_mic = concat(url_mic, MPEG_TS_OPTIONS);
+                    sender_initialize(url_cam, url_mic);
                 } else {
-                    char* url = concat("udp://", command_data->ip);
-                    url = concat(url, ":");
-                    url = concat(url, int_to_str(command_data->port));
-                    url = concat(url, MPEG_TS_OPTIONS);
-                    sender_initialize(url);
+                    char* url_cam = concat("udp://", command_data->ip);
+                    url_cam = concat(url_cam, ":");
+                    url_cam = concat(url_cam, int_to_str(command_data->port_cam));
+                    url_cam = concat(url_cam, MPEG_TS_OPTIONS);
+                    char* url_mic = concat("udp://", command_data->ip);
+                    url_mic = concat(url_mic, ":");
+                    url_mic = concat(url_mic, int_to_str(command_data->port_mic));
+                    url_mic = concat(url_mic, MPEG_TS_OPTIONS);
+                    sender_initialize(url_cam, url_mic);
                 }
             } else if (equals(command_data->cmd, "STOP")) {
                 cop_debug("[receive_command] Stop");
@@ -1073,7 +1121,8 @@ static int receive_command(void* arg) {
                 delete_file(command_data->file_name);
             } else if (equals(command_data->cmd, "RESET")) {
                 cop_debug("[receive_command] Reset");
-                proxy_reset();
+                proxy_reset_cam();
+                proxy_reset_mic();
                 // Update previous state with new IP for 'send to'
                 changeState(state);
             } else {
@@ -1336,8 +1385,10 @@ int main(int argc, char* argv[]) {
 
     if (TEST_LOCAL) {
         if (USE_PROXY) {
-            proxy_init("192.168.0.24", 1234, encryptionPwd);
-            SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+            proxy_init_cam("192.168.0.24", 1234, encryptionPwd);
+            proxy_init_mic("192.168.0.24", 1235, encryptionPwd);
+            SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
+            SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
 
             // Test without UDP commands
             //sender_initialize("udp://192.168.0.24:1234", 640, 480, 10);
@@ -1350,34 +1401,54 @@ int main(int argc, char* argv[]) {
                 concat(
                     concat(
                         concat("udp://", LOCALHOST_IP),
-                        concat(":", int_to_str(PORT_PROXY_LISTEN))
+                        concat(":", int_to_str(PORT_PROXY_LISTEN_CAM))
+                    ),
+                    MPEG_TS_OPTIONS
+                ),
+                concat(
+                    concat(
+                        concat("udp://", LOCALHOST_IP),
+                        concat(":", int_to_str(PORT_PROXY_LISTEN_MIC))
                     ),
                     MPEG_TS_OPTIONS
                 ));
         } else {
             sender_initialize(
-                concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS)
+                concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS),
+                concat("udp://192.168.0.24:1235", MPEG_TS_OPTIONS)
             );
         }
     } else {
         SDL_CreateThread(receive_command, "receive_command", NULL);
 
         // Store stream by using proxy when starting app
-        proxy_init(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY, encryptionPwd);
-        SDL_CreateThread(proxy_receive_udp, "proxy_receive_udp", NULL);
+        proxy_init_cam(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_CAM, encryptionPwd);
+        proxy_init_mic(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_MIC, encryptionPwd);
+        SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
+        SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
 
         system_config* config = malloc(sizeof(system_config));
         config->senderId = senderId;
         config->width = cfg_width;
         config->height = cfg_height;
+        config->has_video = pCamName == NULL ? 0 : 1;
+        config->has_audio = pMicName == NULL ? 0 : 1;
 
         SDL_CreateThread(network_receive_tcp, "network_receive_tcp", config);
-        char* url = "udp://";
-        url = concat(url, LOCALHOST_IP);
-        url = concat(url, ":");
-        url = concat(url, int_to_str(PORT_PROXY_LISTEN));
-        url = concat(url, MPEG_TS_OPTIONS);
-        sender_initialize(url);
+
+        char* url_cam = "udp://";
+        url_cam = concat(url_cam, LOCALHOST_IP);
+        url_cam = concat(url_cam, ":");
+        url_cam = concat(url_cam, int_to_str(PORT_PROXY_LISTEN_CAM));
+        url_cam = concat(url_cam, MPEG_TS_OPTIONS);
+
+        char* url_mic = "udp://";
+        url_mic = concat(url_mic, LOCALHOST_IP);
+        url_mic = concat(url_mic, ":");
+        url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
+        url_mic = concat(url_mic, MPEG_TS_OPTIONS);
+
+        sender_initialize(url_cam, url_mic);
     }
 
     while (quit == 0) {

@@ -15,9 +15,11 @@
 #define PORT_LISTEN_SERVER 6085
 
 // The port the localhost proxy listens to
-#define PORT_PROXY_LISTEN 6070
+#define PORT_PROXY_LISTEN_CAM 6070
+#define PORT_PROXY_LISTEN_MIC 6071
 // The dummy port the proxy sends to if noone is connected
-#define PORT_PROXY_DESTINATION_DUMMY 6075
+#define PORT_PROXY_DESTINATION_DUMMY_CAM 6075
+#define PORT_PROXY_DESTINATION_DUMMY_MIC 6076
 
 // The port the camera listens to for commands from client
 #define PORT_LISTEN_COMMAND_TCP 6090
@@ -32,6 +34,8 @@ typedef struct system_config {
     const char* senderId;
     int width;
     int height;
+    int has_video;
+    int has_audio;
 } system_config;
 
 typedef struct client_data {
@@ -43,7 +47,8 @@ typedef struct command_data {
     // CONNECT
     char* protocol;
     char* ip;
-    int port;
+    int port_cam;
+    int port_mic;
     // DELETE
     char* file_name;
 } command_data;
@@ -58,14 +63,20 @@ void network_send_state(const char* senderId);
 // Close proxy related stuff
 void proxy_close();
 // Reset proxy to 127.0.0.1
-void proxy_reset();
+void proxy_reset_cam();
+void proxy_reset_mic();
 // Connect proxy to remote client and port
-void proxy_connect(const char* dest_ip, int dest_port);
+void proxy_connect_cam(const char* dest_ip, int dest_port);
+void proxy_connect_mic(const char* dest_ip, int dest_port);
 // Close TCP server related stuff
 void server_close();
-void proxy_init(const char* dest_ip, int dest_port, const char* encryptionPwd);
-int proxy_receive_udp(void* arg);
+void proxy_init_cam(const char* dest_ip, int dest_port, const char* encryptionPwd);
+void proxy_init_mic(const char* dest_ip, int dest_port, const char* encryptionPwd);
+int proxy_receive_udp_cam(void* arg);
+int proxy_receive_udp_mic(void* arg);
+
 char* get_video_file_name();
+char* get_audio_file_name();
 
 int network_receive_tcp(void* arg);
 
