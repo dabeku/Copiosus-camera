@@ -173,6 +173,9 @@ bool contains(char* str, char* find) {
 
 char* rand_str(size_t length) {
 
+    // Init seed generator so we get a different value
+    srand (time(NULL));
+
     static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";        
     char *randomString = NULL;
 

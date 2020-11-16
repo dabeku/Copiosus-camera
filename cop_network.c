@@ -188,9 +188,11 @@ void network_send_state(const char* senderId) {
         return;
     }
 
-    const char* msg = concat("STATE ", get_state_str());
+    const char* msg = "STATE";
     msg = concat(msg, " ");
     msg = concat(msg, senderId);
+    msg = concat(msg, " ");
+    msg = concat(msg, get_state_str());
     size_t msg_length = strlen(msg);
     network_send_tcp(msg, msg_length, last_client_data);
 }
@@ -526,6 +528,52 @@ static void tcp_return_scan(int client_socket, const char* senderId, int width, 
     close(client_socket);
 }
 
+// Will return: STATUS temperature (in milli degrees, divide by 1000)
+static void tcp_return_status(int client_socket, const char* senderId) {
+
+    int temp_in_milli_degrees;
+    FILE* temp_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
+    if (temp_file == NULL) {
+        cop_error("[tcp_return_status] Temperature not available.");
+    }
+    fscanf(temp_file, "%d", &temp_in_milli_degrees);
+    fclose(temp_file);
+
+    const char* buffer = "STATUS";
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, senderId);
+    buffer = concat(buffer, " ");
+    buffer = concat(buffer, int_to_str(temp_in_milli_degrees));
+
+    int size = strlen(buffer);
+
+    cop_debug("[tcp_return_status] Send '%d' bytes to caller.", size);
+
+    int sizeLeftToSend = size;
+    
+    for (int j = 0; j < size; j+=BUFFER_SIZE) {
+        
+        int buffSizeToSend = BUFFER_SIZE;
+        if (sizeLeftToSend < BUFFER_SIZE) {
+            buffSizeToSend = sizeLeftToSend;
+        }
+        
+        int result = send(client_socket, buffer, buffSizeToSend, 0);
+        if (result < 0) {
+            cop_error("[tcp_return_status] Send failed: %d.", result);
+            break;
+        }
+        sizeLeftToSend -= BUFFER_SIZE;
+        // Set start position of sending data
+        buffer = buffer + buffSizeToSend;
+    }
+
+    cop_debug("[tcp_return_status] Finishing: Shutdown socket.");
+    shutdown(client_socket, SHUT_RDWR);
+    cop_debug("[tcp_return_status] Finishing: Close socket.");
+    close(client_socket);
+}
+
 static void tcp_return_download(int client_socket, const char* fileName) {
     FILE* download_file = fopen(fileName, "rb");
 
@@ -712,6 +760,12 @@ int network_receive_tcp(void* arg) {
                     // LIST_FILES: Returns list of files
                     if (equals(cmd, "LIST_FILES")) {
                         tcp_return_list_files(client_socket);
+                        break;
+                    }
+
+                    // STATUS: Returns status like temperature
+                    if (equals(cmd, "STATUS")) {
+                        tcp_return_status(client_socket, config->senderId);
                         break;
                     }
 
