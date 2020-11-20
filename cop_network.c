@@ -14,18 +14,12 @@
 #include <sys/socket.h>
 
 #include "cop_network.h"
-#include "cop_utility.h"
-#include "cop_status_code.h"
 
 static int receive_udp_socket = -1;
 static int receive_tcp_socket = -1;
 
-static int proxy_send_udp_socket_cam = -1;
-static int proxy_send_udp_socket_mic = -1;
 static int proxy_receive_udp_socket_cam = -1;
 static int proxy_receive_udp_socket_mic = -1;
-static struct sockaddr_in dest_addr_cam;
-static struct sockaddr_in dest_addr_mic;
 static bool is_network_running_cam = false;
 static bool is_network_running_mic = false;
 static FILE* file_cam = NULL;
@@ -36,6 +30,12 @@ static char* file_mic_name = NULL;
 // Set by main() args
 static const char* encryption_pwd_cam = NULL;
 static const char* encryption_pwd_mic = NULL;
+
+static const char* LOCALHOST_IP = "127.0.0.1";
+
+// TODO: Before editing or using the list clone it (immutable)
+struct list_item* client_data_cam_list = NULL;
+struct list_item* client_data_mic_list = NULL;
 
 typedef struct FileItem {
     char* file_name;
@@ -184,32 +184,41 @@ static const char* get_state_str() {
 
 void network_send_state(const char* senderId) {
 
-    if (last_client_data == NULL) {
-        return;
+    // Camera
+    for (int i = 0; i < list_length(client_data_cam_list); i++) {
+        const char* msg = "STATE";
+        msg = concat(msg, " ");
+        msg = concat(msg, senderId);
+        msg = concat(msg, " ");
+        msg = concat(msg, get_state_str());
+        msg = concat(msg, " ");
+        msg = concat(msg, "CAM");
+        size_t msg_length = strlen(msg);
+        
+        list_item* item = list_get(client_data_cam_list, i);
+        client_data* data = (client_data*)item->data;
+        network_send_tcp(msg, msg_length, data);
     }
 
-    const char* msg = "STATE";
-    msg = concat(msg, " ");
-    msg = concat(msg, senderId);
-    msg = concat(msg, " ");
-    msg = concat(msg, get_state_str());
-    size_t msg_length = strlen(msg);
-    network_send_tcp(msg, msg_length, last_client_data);
+    // Mic
+    for (int i = 0; i < list_length(client_data_mic_list); i++) {
+        const char* msg = "STATE";
+        msg = concat(msg, " ");
+        msg = concat(msg, senderId);
+        msg = concat(msg, " ");
+        msg = concat(msg, get_state_str());
+        msg = concat(msg, " ");
+        msg = concat(msg, "MIC");
+        size_t msg_length = strlen(msg);
+        
+        list_item* item = list_get(client_data_mic_list, i);
+        client_data* data = (client_data*)item->data;
+        network_send_tcp(msg, msg_length, data);
+    }
 }
 
 void proxy_close() {
-    if (proxy_send_udp_socket_cam < 0) {
-        cop_error("[proxy_close] cam: Socket send not open: %d.", proxy_send_udp_socket_cam);
-    } else {
-        cop_debug("[proxy_close] cam: Close 'send-udp-socket'.");
-        close(proxy_send_udp_socket_cam);
-    }
-    if (proxy_send_udp_socket_mic < 0) {
-        cop_error("[proxy_close] mic: Socket send not open: %d.", proxy_send_udp_socket_mic);
-    } else {
-        cop_debug("[proxy_close] mic: Close 'send-udp-socket'.");
-        close(proxy_send_udp_socket_mic);
-    }
+    // TODO: Close sockets from list 2x
     if (proxy_receive_udp_socket_cam < 0) {
         cop_error("[proxy_close] cam: Socket receive not open: %d.", proxy_receive_udp_socket_cam);
     } else {
@@ -251,16 +260,39 @@ static void set_next_file_mic() {
     file_mic = fopen(file_mic_name, "ab");
 }
 
-void proxy_init_cam(const char* dest_ip, int dest_port, const char* pwd) {
-    cop_debug("[proxy_init_cam] %s %d.", dest_ip, dest_port);
-    proxy_send_udp_socket_cam = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (proxy_send_udp_socket_cam < 0) {
-        cop_error("[proxy_init_cam] Could not create socket: %d.", proxy_send_udp_socket_cam);
-        return;
+static list_item* add_ip_to_list(list_item* client_data_list, char* ip, int dest_port) {
+    bool exists = false;
+    for (int i = 0; i < list_length(client_data_list); i++) {
+        list_item* item = list_get(client_data_list, i);
+        client_data* data = (client_data*)item->data;
+        exists = equals(data->src_ip, ip) && data->src_port == dest_port;
+        if (exists) {
+            break;
+        }
     }
-    dest_addr_cam.sin_family = AF_INET;
-    dest_addr_cam.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr_cam.sin_port = htons(dest_port);
+    if (!exists) {
+        cop_debug("[add_ip_to_list] Ip does not exists yet: %s. Add to list.", ip);
+        // Add client data
+        client_data* data = malloc(sizeof(client_data));
+        data->src_ip = strdup(ip);
+        data->src_port = dest_port;
+        int client_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (socket < 0) {
+            cop_error("[add_ip_to_list] Could not create socket: %d.", socket);
+            return;
+        }
+        data->socket = client_socket;
+        client_data_list = list_push(client_data_list, data);
+    } else {
+        cop_debug("[add_ip_to_list] Ip already exists: %s. Do nothing.", ip);
+    }
+    return client_data_list;
+}
+
+void proxy_init_cam(char* dest_ip, int dest_port, const char* pwd) {
+    cop_debug("[proxy_init_cam] %s %d.", dest_ip, dest_port);
+    // TODO: Not needed anymore?
+    client_data_cam_list = add_ip_to_list(client_data_cam_list, dest_ip, dest_port);
     encryption_pwd_cam = pwd;
     set_next_file_cam();
 
@@ -269,16 +301,10 @@ void proxy_init_cam(const char* dest_ip, int dest_port, const char* pwd) {
     cop_debug("[proxy_init_cam] Done.");
 }
 
-void proxy_init_mic(const char* dest_ip, int dest_port, const char* pwd) {
+void proxy_init_mic(char* dest_ip, int dest_port, const char* pwd) {
     cop_debug("[proxy_init_mic] %s %d.", dest_ip, dest_port);
-    proxy_send_udp_socket_mic = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (proxy_send_udp_socket_mic < 0) {
-        cop_error("[proxy_init_mic] Could not create socket: %d.", proxy_send_udp_socket_mic);
-        return;
-    }
-    dest_addr_mic.sin_family = AF_INET;
-    dest_addr_mic.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr_mic.sin_port = htons(dest_port);
+    // TODO: Not needed anymore?
+    client_data_mic_list = add_ip_to_list(client_data_mic_list, dest_ip, dest_port);
     encryption_pwd_mic = pwd;
     set_next_file_mic();
 
@@ -290,52 +316,84 @@ void proxy_init_mic(const char* dest_ip, int dest_port, const char* pwd) {
 // We only want to redirect output to localhost again
 void proxy_reset_cam() {
     cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_CAM);
-    dest_addr_cam.sin_addr.s_addr = inet_addr("127.0.0.1");
-    dest_addr_cam.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY_CAM);
+    for (int i = 0; i < list_length(client_data_cam_list); i++) {
+        client_data_cam_list = list_delete(client_data_cam_list, 0);
+    }
+    // Add client data
+    client_data* data = malloc(sizeof(client_data));
+    data->src_ip = strdup(LOCALHOST_IP);
+    data->src_port = PORT_PROXY_DESTINATION_DUMMY_CAM;
+    client_data_cam_list = list_push(client_data_cam_list, data);
     cop_debug("[proxy_reset] Done.");
 }
 void proxy_reset_mic() {
     cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_MIC);
-    dest_addr_mic.sin_addr.s_addr = inet_addr("127.0.0.1");
-    dest_addr_mic.sin_port = htons(PORT_PROXY_DESTINATION_DUMMY_MIC);
+    for (int i = 0; i < list_length(client_data_mic_list); i++) {
+        client_data_mic_list = list_delete(client_data_mic_list, 0);
+    }
+    // Add client data
+    client_data* data = malloc(sizeof(client_data));
+    data->src_ip = strdup(LOCALHOST_IP);
+    data->src_port = PORT_PROXY_DESTINATION_DUMMY_MIC;
+    client_data_mic_list = list_push(client_data_mic_list, data);
     cop_debug("[proxy_reset] Done.");
 }
 
-
 void proxy_connect_cam(const char* dest_ip, int dest_port) {
     cop_debug("[proxy_connect_cam] Connect proxy to %s and port %d.", dest_ip, dest_port);
-    dest_addr_cam.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr_cam.sin_port = htons(dest_port);
-    cop_debug("[proxy_connect_cam] Done.");
+    // Add client data
+    client_data* data = malloc(sizeof(client_data));
+    data->src_ip = strdup(dest_ip);
+    data->src_port = dest_port;
+    client_data_cam_list = list_push(client_data_cam_list, data);
+    cop_debug("[proxy_connect_cam] Done. Length: %d.", list_length(client_data_cam_list));
 }
 void proxy_connect_mic(const char* dest_ip, int dest_port) {
     cop_debug("[proxy_connect_mic] Connect proxy to %s and port %d.", dest_ip, dest_port);
-    dest_addr_mic.sin_addr.s_addr = inet_addr(dest_ip);
-    dest_addr_mic.sin_port = htons(dest_port);
+    // Add client data
+    client_data* data = malloc(sizeof(client_data));
+    data->src_ip = strdup(dest_ip);
+    data->src_port = dest_port;
+    client_data_mic_list = list_push(client_data_mic_list, data);
     cop_debug("[proxy_connect_mic] Done.");
 }
 
 // Type = 0: cam, 1: mic
 void proxy_send_udp(int type, const char* data) {
 
+    static struct sockaddr_in dest_addr;
+
     if (type == 0) {
-        if (proxy_send_udp_socket_cam < 0) {
-            cop_error("[proxy_send_udp] cam: Socket not available: %d", proxy_send_udp_socket_cam);
-        }
-        int result = sendto(proxy_send_udp_socket_cam, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr_cam, sizeof(dest_addr_cam));
-        if (result < 0) {
-            cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
+        for (int i = 0; i < list_length(client_data_cam_list); i++) {
+            list_item* item = list_get(client_data_cam_list, i);
+            client_data* cl_data = (client_data*)item->data;
+            dest_addr.sin_family = AF_INET;
+            dest_addr.sin_addr.s_addr = inet_addr(cl_data->src_ip);
+            dest_addr.sin_port = htons(cl_data->src_port);
+            if (cl_data->socket < 0) {
+                cop_error("[proxy_send_udp] cam: Socket not available: %d", cl_data->socket);
+            }
+            int result = sendto(cl_data->socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            if (result < 0) {
+                cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
+            }
         }
     } else {
-        if (proxy_send_udp_socket_mic < 0) {
-            cop_error("[proxy_send_udp] mic: Socket not available: %d", proxy_send_udp_socket_mic);
-        }
-        int result = sendto(proxy_send_udp_socket_mic, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr_mic, sizeof(dest_addr_mic));
-        if (result < 0) {
-            cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
+        for (int i = 0; i < list_length(client_data_mic_list); i++) {
+            list_item* item = list_get(client_data_mic_list, i);
+            client_data* cl_data = (client_data*)item->data;
+            dest_addr.sin_family = AF_INET;
+            dest_addr.sin_addr.s_addr = inet_addr(cl_data->src_ip);
+            dest_addr.sin_port = htons(cl_data->src_port);
+            if (cl_data->socket < 0) {
+                cop_error("[proxy_send_udp] mic: Socket not available: %d", cl_data->socket);
+            }
+            int result = sendto(cl_data->socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            if (result < 0) {
+                cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
+            }
         }
     }
-    
 }
 
 // Type = 0: cam, 1: mic
@@ -464,11 +522,35 @@ char* get_audio_file_name() {
     return file_mic_name;
 }
 
+// Produces tuples ip:type (V for video, A for audio): 192.168.0.25:V;182.168.0.27:A
 char* get_sendto_ip() {
-    char* str = malloc(sizeof(char) * INET_ADDRSTRLEN);
-    // TODO: Assume camera ip endpoint
-    inet_ntop(AF_INET, &(dest_addr_cam.sin_addr), str, INET_ADDRSTRLEN);
-    return str;
+    char* buffer = "";
+    for (int i = 0; i < list_length(client_data_cam_list); i++) {
+        list_item* item = list_get(client_data_cam_list, i);
+        client_data* data = (client_data*)item->data;
+        buffer = concat(buffer, data->src_ip);
+        buffer = concat(buffer, ":");
+        buffer = concat(buffer, "V");
+        if (i < list_length(client_data_cam_list) - 1) {
+            buffer = concat(buffer, ";");
+        }
+    }
+    if (list_length(client_data_mic_list) > 0) {
+        buffer = concat(buffer, ";");
+    }
+    // TODO: Handle mic path
+    for (int i = 0; i < list_length(client_data_mic_list); i++) {
+        list_item* item = list_get(client_data_mic_list, i);
+        client_data* data = (client_data*)item->data;
+        buffer = concat(buffer, data->src_ip);
+        buffer = concat(buffer, ":");
+        buffer = concat(buffer, "A");
+        if (i < list_length(client_data_mic_list) - 1) {
+            buffer = concat(buffer, ";");
+        }
+    }
+    cop_debug("[get_sendto_ip] %s.", buffer);
+    return buffer;
 }
 
 static const char* get_hostname() {
@@ -714,6 +796,8 @@ int network_receive_tcp(void* arg) {
     // Bind
     if (bind(receive_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
         cop_error("[network_receive_tcp] Bind failed.");
+        // TODO: Remove this
+        exit(-1);
         return STATUS_CODE_NOK;
     }
 
@@ -771,11 +855,26 @@ int network_receive_tcp(void* arg) {
 
                     // SCAN: Returns device id, width and height
                     if (equals(cmd, "SCAN")) {
-                        // Set last client data so we can call its socket
-                        last_client_data = NULL;
-                        last_client_data = malloc(sizeof(client_data));
-                        last_client_data->src_ip = inet_ntoa(client_addr.sin_addr);
-                        cop_debug("Source: %s.", last_client_data->src_ip);
+                        // Check if client data already exists
+                        /*bool exists = false;
+                        for (int i = 0; i < list_length(client_data_list); i++) {
+                            list_item* item = list_get(client_data_list, i);
+                            client_data* data = (client_data*)item->data;
+                            exists = equals(data->src_ip, inet_ntoa(client_addr.sin_addr));
+                        }
+                        if (!exists) {
+                            // Add client data
+                            client_data* data = malloc(sizeof(client_data));
+                            data->src_ip = inet_ntoa(client_addr.sin_addr);
+                            cop_debug("[network_receive_tcp] Ip does not exists yet: %s. Add to list.", data->src_ip);
+                            list_push(client_data_list, data);
+                        }*/
+                        // Notify all about change
+                        /*for (int i = 0; i < list_length(client_data_list); i++) {
+                            list_item* item = list_get(client_data_list, i);
+                            client_data* data = (client_data*)item->data;
+                            cop_debug("[network_receive_tcp] Notify %s.", data->src_ip);
+                        }*/
                         tcp_return_scan(client_socket, config->senderId, config->width, config->height, config->has_video, config->has_audio);
                         break;
                     }

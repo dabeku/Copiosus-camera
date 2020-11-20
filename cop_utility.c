@@ -125,13 +125,17 @@ int encode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame)
     return 0;
 }
 
-int str_to_int(char* num) {
+static int str_to_uint(char* num) {
     int dec = 0, i, len;
     len = strlen(num);
     for(i=0; i<len; i++){
         dec = dec * 10 + ( num[i] - '0' );
     }
     return dec;
+}
+
+int str_to_int(char * c) {
+    return (*c == '-') ? -str_to_uint(c+1) : str_to_uint(c);
 }
 
 char* int_to_str(int num) {

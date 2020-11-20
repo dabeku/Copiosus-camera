@@ -37,7 +37,7 @@
 #define CFG_HEIGHT 480
 #define CFG_FRAME_RATE 30
 
-static const char* LOCALHOST_IP = "127.0.0.1";
+static char* LOCALHOST_IP = "127.0.0.1";
 static const char* MPEG_TS_OPTIONS = "?pkt_size=1472";
 
 // A global quit flag: 0 = running, 1 = quit
@@ -55,8 +55,6 @@ static char* senderId = NULL;
 // 2 = connected
 // 3 = disconnecting
 int state = 0;
-
-client_data* last_client_data = NULL;
 
 // Config section
 int cfg_framerate = 0;
@@ -172,10 +170,7 @@ void ePipeHandler(int dummy) {
  */
 static void changeState(int newState) {
     state = newState;
-
-    if (last_client_data != NULL) {
-        network_send_state(senderId);
-    }
+    network_send_state(senderId);
 }
 
 static int decode_video(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame) {

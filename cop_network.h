@@ -9,6 +9,9 @@
 #ifndef COP_NETWORK_H
 #define COP_NETWORK_H
 
+#include "cop_utility.h"
+#include "cop_status_code.h"
+
 // Sender receives incoming CONNECT requests on this port
 #define PORT_COMMAND_CAMERA 6081
 // Sender will send back to this server port
@@ -40,6 +43,8 @@ typedef struct system_config {
 
 typedef struct client_data {
     char* src_ip;
+    int src_port;
+    int socket;
 } client_data;
 
 typedef struct command_data {
@@ -54,7 +59,6 @@ typedef struct command_data {
 } command_data;
 
 extern int state;
-extern client_data* last_client_data;
 
 command_data* network_receive_udp(int listen_port);
 
@@ -70,8 +74,8 @@ void proxy_connect_cam(const char* dest_ip, int dest_port);
 void proxy_connect_mic(const char* dest_ip, int dest_port);
 // Close TCP server related stuff
 void server_close();
-void proxy_init_cam(const char* dest_ip, int dest_port, const char* encryptionPwd);
-void proxy_init_mic(const char* dest_ip, int dest_port, const char* encryptionPwd);
+void proxy_init_cam(char* dest_ip, int dest_port, const char* encryptionPwd);
+void proxy_init_mic(char* dest_ip, int dest_port, const char* encryptionPwd);
 int proxy_receive_udp_cam(void* arg);
 int proxy_receive_udp_mic(void* arg);
 
