@@ -12,6 +12,7 @@
 
 #include <arpa/inet.h>
 #include <sys/socket.h>
+#include <signal.h> // for raise()
 
 #include "cop_network.h"
 
@@ -346,7 +347,7 @@ void proxy_connect_cam(const char* dest_ip, int dest_port) {
     data->src_ip = strdup(dest_ip);
     data->src_port = dest_port;
     client_data_cam_list = list_push(client_data_cam_list, data);
-    cop_debug("[proxy_connect_cam] Done. Length: %d.", list_length(client_data_cam_list));
+    cop_debug("[proxy_connect_cam] Done.");
 }
 void proxy_connect_mic(const char* dest_ip, int dest_port) {
     cop_debug("[proxy_connect_mic] Connect proxy to %s and port %d.", dest_ip, dest_port);
@@ -538,7 +539,6 @@ char* get_sendto_ip() {
     if (list_length(client_data_mic_list) > 0) {
         buffer = concat(buffer, ";");
     }
-    // TODO: Handle mic path
     for (int i = 0; i < list_length(client_data_mic_list); i++) {
         list_item* item = list_get(client_data_mic_list, i);
         client_data* data = (client_data*)item->data;
@@ -796,8 +796,8 @@ int network_receive_tcp(void* arg) {
     // Bind
     if (bind(receive_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
         cop_error("[network_receive_tcp] Bind failed.");
-        // TODO: Remove this
-        exit(-1);
+        // Since we're in a thread signal the main application
+        raise(SIGINT);
         return STATUS_CODE_NOK;
     }
 
@@ -855,26 +855,6 @@ int network_receive_tcp(void* arg) {
 
                     // SCAN: Returns device id, width and height
                     if (equals(cmd, "SCAN")) {
-                        // Check if client data already exists
-                        /*bool exists = false;
-                        for (int i = 0; i < list_length(client_data_list); i++) {
-                            list_item* item = list_get(client_data_list, i);
-                            client_data* data = (client_data*)item->data;
-                            exists = equals(data->src_ip, inet_ntoa(client_addr.sin_addr));
-                        }
-                        if (!exists) {
-                            // Add client data
-                            client_data* data = malloc(sizeof(client_data));
-                            data->src_ip = inet_ntoa(client_addr.sin_addr);
-                            cop_debug("[network_receive_tcp] Ip does not exists yet: %s. Add to list.", data->src_ip);
-                            list_push(client_data_list, data);
-                        }*/
-                        // Notify all about change
-                        /*for (int i = 0; i < list_length(client_data_list); i++) {
-                            list_item* item = list_get(client_data_list, i);
-                            client_data* data = (client_data*)item->data;
-                            cop_debug("[network_receive_tcp] Notify %s.", data->src_ip);
-                        }*/
                         tcp_return_scan(client_socket, config->senderId, config->width, config->height, config->has_video, config->has_audio);
                         break;
                     }
