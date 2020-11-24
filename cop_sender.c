@@ -41,7 +41,7 @@ static char* LOCALHOST_IP = "127.0.0.1";
 static const char* MPEG_TS_OPTIONS = "?pkt_size=1472";
 
 // A global quit flag: 0 = running, 1 = quit
-static int quit = 0;
+int quit = 0;
 static int isAudioQuit = 1;
 static int isVideoQuit = 1;
 static int isAudioProcessing = 0;
@@ -1072,8 +1072,12 @@ static int receive_command(void* arg) {
 
             if (equals(command_data->cmd, "CONNECT")) {
                 if (USE_PROXY) {
-                    proxy_connect_cam(command_data->ip, command_data->port_cam);
-                    proxy_connect_mic(command_data->ip, command_data->port_mic);
+                    if (command_data->port_cam != -1) {
+                        proxy_connect_cam(command_data->ip, command_data->port_cam);
+                    }
+                    if (command_data->port_mic != -1) {
+                        proxy_connect_mic(command_data->ip, command_data->port_mic);
+                    }
                     // Update previous state with new IP for 'send to'
                     changeState(state);
                 } else {

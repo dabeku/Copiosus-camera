@@ -59,6 +59,7 @@ typedef struct command_data {
 } command_data;
 
 extern int state;
+extern int quit;
 
 command_data* network_receive_udp(int listen_port);
 
@@ -70,8 +71,8 @@ void proxy_close();
 void proxy_reset_cam();
 void proxy_reset_mic();
 // Connect proxy to remote client and port
-void proxy_connect_cam(const char* dest_ip, int dest_port);
-void proxy_connect_mic(const char* dest_ip, int dest_port);
+void proxy_connect_cam(char* dest_ip, int dest_port);
+void proxy_connect_mic(char* dest_ip, int dest_port);
 // Close TCP server related stuff
 void server_close();
 void proxy_init_cam(char* dest_ip, int dest_port, const char* encryptionPwd);

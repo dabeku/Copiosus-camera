@@ -32,8 +32,6 @@ static char* file_mic_name = NULL;
 static const char* encryption_pwd_cam = NULL;
 static const char* encryption_pwd_mic = NULL;
 
-static const char* LOCALHOST_IP = "127.0.0.1";
-
 // TODO: Before editing or using the list clone it (immutable)
 struct list_item* client_data_cam_list = NULL;
 struct list_item* client_data_mic_list = NULL;
@@ -42,6 +40,31 @@ typedef struct FileItem {
     char* file_name;
     long file_size_kb;
 } FileItem;
+
+static list_item* list_clone(list_item* list) {
+    struct list_item* clone = NULL;
+    for (int i = 0; i < list_length(list); i++) {
+        list_item* item = list_get(list, i);
+        client_data* data = (client_data*)item->data;
+        client_data* new_data = malloc(sizeof(client_data));
+        new_data->src_ip = strdup(data->src_ip);
+        new_data->src_port = data->src_port;
+        new_data->socket = data->socket;
+        clone = list_push(clone, new_data);
+    }
+    return clone;
+}
+
+static void list_clear(list_item* list) {
+    for (int i = 0; i < list_length(list); i++) {
+        list_item* item = list_get(list, 0);
+        client_data* data = (client_data*)item->data;
+        char* temp = data->src_ip;
+        list = list_delete(list, 0);
+        free(temp);
+        free(data);
+    }
+}
 
 command_data* network_receive_udp(int listen_port) {
     cop_debug("[network_receive_udp].");
@@ -186,7 +209,8 @@ static const char* get_state_str() {
 void network_send_state(const char* senderId) {
 
     // Camera
-    for (int i = 0; i < list_length(client_data_cam_list); i++) {
+    list_item* clone_cam = list_clone(client_data_cam_list);
+    for (int i = 0; i < list_length(clone_cam); i++) {
         const char* msg = "STATE";
         msg = concat(msg, " ");
         msg = concat(msg, senderId);
@@ -196,13 +220,15 @@ void network_send_state(const char* senderId) {
         msg = concat(msg, "CAM");
         size_t msg_length = strlen(msg);
         
-        list_item* item = list_get(client_data_cam_list, i);
+        list_item* item = list_get(clone_cam, i);
         client_data* data = (client_data*)item->data;
         network_send_tcp(msg, msg_length, data);
     }
+    list_clear(clone_cam);
 
     // Mic
-    for (int i = 0; i < list_length(client_data_mic_list); i++) {
+    list_item* clone_mic = list_clone(client_data_mic_list);
+    for (int i = 0; i < list_length(clone_mic); i++) {
         const char* msg = "STATE";
         msg = concat(msg, " ");
         msg = concat(msg, senderId);
@@ -212,10 +238,11 @@ void network_send_state(const char* senderId) {
         msg = concat(msg, "MIC");
         size_t msg_length = strlen(msg);
         
-        list_item* item = list_get(client_data_mic_list, i);
+        list_item* item = list_get(clone_mic, i);
         client_data* data = (client_data*)item->data;
         network_send_tcp(msg, msg_length, data);
     }
+    list_clear(clone_mic);
 }
 
 void proxy_close() {
@@ -262,9 +289,12 @@ static void set_next_file_mic() {
 }
 
 static list_item* add_ip_to_list(list_item* client_data_list, char* ip, int dest_port) {
+
+    list_item* clone = list_clone(client_data_list);
+
     bool exists = false;
-    for (int i = 0; i < list_length(client_data_list); i++) {
-        list_item* item = list_get(client_data_list, i);
+    for (int i = 0; i < list_length(clone); i++) {
+        list_item* item = list_get(clone, i);
         client_data* data = (client_data*)item->data;
         exists = equals(data->src_ip, ip) && data->src_port == dest_port;
         if (exists) {
@@ -280,20 +310,24 @@ static list_item* add_ip_to_list(list_item* client_data_list, char* ip, int dest
         int client_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (socket < 0) {
             cop_error("[add_ip_to_list] Could not create socket: %d.", socket);
-            return;
+            return clone;
         }
         data->socket = client_socket;
-        client_data_list = list_push(client_data_list, data);
+        clone = list_push(clone, data);
     } else {
         cop_debug("[add_ip_to_list] Ip already exists: %s. Do nothing.", ip);
     }
-    return client_data_list;
+
+    return clone;
 }
 
+// TODO: Remove parameter: ip and port
 void proxy_init_cam(char* dest_ip, int dest_port, const char* pwd) {
     cop_debug("[proxy_init_cam] %s %d.", dest_ip, dest_port);
     // TODO: Not needed anymore?
-    client_data_cam_list = add_ip_to_list(client_data_cam_list, dest_ip, dest_port);
+    /*list_item* clone = add_ip_to_list(client_data_cam_list, dest_ip, dest_port);
+    list_clear(client_data_cam_list);
+    client_data_cam_list = clone;*/
     encryption_pwd_cam = pwd;
     set_next_file_cam();
 
@@ -302,10 +336,13 @@ void proxy_init_cam(char* dest_ip, int dest_port, const char* pwd) {
     cop_debug("[proxy_init_cam] Done.");
 }
 
+// TODO: Remove parameter: ip and port
 void proxy_init_mic(char* dest_ip, int dest_port, const char* pwd) {
     cop_debug("[proxy_init_mic] %s %d.", dest_ip, dest_port);
     // TODO: Not needed anymore?
-    client_data_mic_list = add_ip_to_list(client_data_mic_list, dest_ip, dest_port);
+    /*list_item* clone = add_ip_to_list(client_data_mic_list, dest_ip, dest_port);
+    list_clear(client_data_mic_list);
+    client_data_mic_list = clone;*/
     encryption_pwd_mic = pwd;
     set_next_file_mic();
 
@@ -317,45 +354,61 @@ void proxy_init_mic(char* dest_ip, int dest_port, const char* pwd) {
 // We only want to redirect output to localhost again
 void proxy_reset_cam() {
     cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_CAM);
-    for (int i = 0; i < list_length(client_data_cam_list); i++) {
-        client_data_cam_list = list_delete(client_data_cam_list, 0);
+    list_item* clone_cam = list_clone(client_data_cam_list);
+    for (int i = 0; i < list_length(clone_cam); i++) {
+        clone_cam = list_delete(clone_cam, 0);
     }
+    list_item* ptr = client_data_cam_list;
+    client_data_cam_list = clone_cam;
+    list_clear(ptr);
     // Add client data
-    client_data* data = malloc(sizeof(client_data));
+    /*client_data* data = malloc(sizeof(client_data));
     data->src_ip = strdup(LOCALHOST_IP);
     data->src_port = PORT_PROXY_DESTINATION_DUMMY_CAM;
-    client_data_cam_list = list_push(client_data_cam_list, data);
+    client_data_cam_list = list_push(client_data_cam_list, data);*/
     cop_debug("[proxy_reset] Done.");
 }
 void proxy_reset_mic() {
     cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_MIC);
-    for (int i = 0; i < list_length(client_data_mic_list); i++) {
-        client_data_mic_list = list_delete(client_data_mic_list, 0);
+    list_item* clone_mic = list_clone(client_data_mic_list);
+    for (int i = 0; i < list_length(clone_mic); i++) {
+        client_data_mic_list = list_delete(clone_mic, 0);
     }
+    list_item* ptr = client_data_mic_list;
+    client_data_mic_list = clone_mic;
+    list_clear(ptr);
     // Add client data
-    client_data* data = malloc(sizeof(client_data));
+    /*client_data* data = malloc(sizeof(client_data));
     data->src_ip = strdup(LOCALHOST_IP);
     data->src_port = PORT_PROXY_DESTINATION_DUMMY_MIC;
-    client_data_mic_list = list_push(client_data_mic_list, data);
+    client_data_mic_list = list_push(client_data_mic_list, data);*/
     cop_debug("[proxy_reset] Done.");
 }
 
-void proxy_connect_cam(const char* dest_ip, int dest_port) {
+void proxy_connect_cam(char* dest_ip, int dest_port) {
     cop_debug("[proxy_connect_cam] Connect proxy to %s and port %d.", dest_ip, dest_port);
     // Add client data
-    client_data* data = malloc(sizeof(client_data));
+    list_item* clone = add_ip_to_list(client_data_cam_list, dest_ip, dest_port);
+    list_item* ptr = client_data_cam_list;
+    client_data_cam_list = clone;
+    list_clear(ptr);
+    /*client_data* data = malloc(sizeof(client_data));
     data->src_ip = strdup(dest_ip);
     data->src_port = dest_port;
-    client_data_cam_list = list_push(client_data_cam_list, data);
+    client_data_cam_list = list_push(client_data_cam_list, data);*/
     cop_debug("[proxy_connect_cam] Done.");
 }
-void proxy_connect_mic(const char* dest_ip, int dest_port) {
+void proxy_connect_mic(char* dest_ip, int dest_port) {
     cop_debug("[proxy_connect_mic] Connect proxy to %s and port %d.", dest_ip, dest_port);
     // Add client data
-    client_data* data = malloc(sizeof(client_data));
+    list_item* clone = add_ip_to_list(client_data_mic_list, dest_ip, dest_port);
+    list_item* ptr = client_data_mic_list;
+    client_data_mic_list = clone;
+    list_clear(ptr);
+    /*client_data* data = malloc(sizeof(client_data));
     data->src_ip = strdup(dest_ip);
     data->src_port = dest_port;
-    client_data_mic_list = list_push(client_data_mic_list, data);
+    client_data_mic_list = list_push(client_data_mic_list, data);*/
     cop_debug("[proxy_connect_mic] Done.");
 }
 
@@ -365,8 +418,9 @@ void proxy_send_udp(int type, const char* data) {
     static struct sockaddr_in dest_addr;
 
     if (type == 0) {
-        for (int i = 0; i < list_length(client_data_cam_list); i++) {
-            list_item* item = list_get(client_data_cam_list, i);
+        list_item* clone_cam = list_clone(client_data_cam_list);
+        for (int i = 0; i < list_length(clone_cam); i++) {
+            list_item* item = list_get(clone_cam, i);
             client_data* cl_data = (client_data*)item->data;
             dest_addr.sin_family = AF_INET;
             dest_addr.sin_addr.s_addr = inet_addr(cl_data->src_ip);
@@ -379,9 +433,11 @@ void proxy_send_udp(int type, const char* data) {
                 cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
             }
         }
-    } else {
-        for (int i = 0; i < list_length(client_data_mic_list); i++) {
-            list_item* item = list_get(client_data_mic_list, i);
+        list_clear(clone_cam);
+    } else if (type == 1) {
+        list_item* clone_mic = list_clone(client_data_mic_list);
+        for (int i = 0; i < list_length(clone_mic); i++) {
+            list_item* item = list_get(clone_mic, i);
             client_data* cl_data = (client_data*)item->data;
             dest_addr.sin_family = AF_INET;
             dest_addr.sin_addr.s_addr = inet_addr(cl_data->src_ip);
@@ -394,6 +450,7 @@ void proxy_send_udp(int type, const char* data) {
                 cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
             }
         }
+        list_clear(clone_mic);
     }
 }
 
@@ -526,30 +583,33 @@ char* get_audio_file_name() {
 // Produces tuples ip:type (V for video, A for audio): 192.168.0.25:V;182.168.0.27:A
 char* get_sendto_ip() {
     char* buffer = "";
-    for (int i = 0; i < list_length(client_data_cam_list); i++) {
-        list_item* item = list_get(client_data_cam_list, i);
+    list_item* clone_cam = list_clone(client_data_cam_list);
+    list_item* clone_mic = list_clone(client_data_mic_list);
+    for (int i = 0; i < list_length(clone_cam); i++) {
+        list_item* item = list_get(clone_cam, i);
         client_data* data = (client_data*)item->data;
         buffer = concat(buffer, data->src_ip);
         buffer = concat(buffer, ":");
         buffer = concat(buffer, "V");
-        if (i < list_length(client_data_cam_list) - 1) {
+        if (i < list_length(clone_cam) - 1) {
             buffer = concat(buffer, ";");
         }
     }
-    if (list_length(client_data_mic_list) > 0) {
+    if (list_length(clone_mic) > 0) {
         buffer = concat(buffer, ";");
     }
-    for (int i = 0; i < list_length(client_data_mic_list); i++) {
-        list_item* item = list_get(client_data_mic_list, i);
+    for (int i = 0; i < list_length(clone_mic); i++) {
+        list_item* item = list_get(clone_mic, i);
         client_data* data = (client_data*)item->data;
         buffer = concat(buffer, data->src_ip);
         buffer = concat(buffer, ":");
         buffer = concat(buffer, "A");
-        if (i < list_length(client_data_mic_list) - 1) {
+        if (i < list_length(clone_mic) - 1) {
             buffer = concat(buffer, ";");
         }
     }
-    cop_debug("[get_sendto_ip] %s.", buffer);
+    list_clear(clone_cam);
+    list_clear(clone_mic);
     return buffer;
 }
 
@@ -797,7 +857,7 @@ int network_receive_tcp(void* arg) {
     if (bind(receive_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) < 0) {
         cop_error("[network_receive_tcp] Bind failed.");
         // Since we're in a thread signal the main application
-        raise(SIGINT);
+        quit = 1;
         return STATUS_CODE_NOK;
     }
 
