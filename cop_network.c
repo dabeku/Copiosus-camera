@@ -16,7 +16,6 @@
 
 #include "cop_network.h"
 
-static int receive_udp_socket = -1;
 static int receive_tcp_socket = -1;
 
 static int proxy_receive_udp_socket_cam = -1;
@@ -32,7 +31,6 @@ static char* file_mic_name = NULL;
 static const char* encryption_pwd_cam = NULL;
 static const char* encryption_pwd_mic = NULL;
 
-// TODO: Before editing or using the list clone it (immutable)
 struct list_item* client_data_cam_list = NULL;
 struct list_item* client_data_mic_list = NULL;
 
@@ -64,87 +62,6 @@ static void list_clear(list_item* list) {
         free(temp);
         free(data);
     }
-}
-
-command_data* network_receive_udp(int listen_port) {
-    cop_debug("[network_receive_udp].");
-
-    struct sockaddr_in addr, si_other;
-    receive_udp_socket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (receive_udp_socket == -1) {
-        cop_error("[network_receive_udp] Could not create socket.");
-        return NULL;
-    }
-
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(listen_port);
-    addr.sin_addr.s_addr = INADDR_ANY;
-
-    cop_debug("[network_receive_udp] Bind to port %d.", listen_port);
-    int result = bind(receive_udp_socket, (struct sockaddr *)&addr, sizeof(addr));
-    if (result == -1) {
-        cop_error("[network_receive_udp] Could not bind socket do %d.", listen_port);
-        return NULL;
-    }
-
-    char* buffer = malloc(sizeof(char) * BUFFER_SIZE);
-    memset(buffer, '\0', BUFFER_SIZE);
-    unsigned slen=sizeof(addr);
-    recvfrom(receive_udp_socket, buffer, BUFFER_SIZE, 0, (struct sockaddr *)&si_other, &slen);
-    cop_debug("[network_receive_udp] Received: %s.", buffer);
-    close(receive_udp_socket);
-
-    char* token;
-
-    command_data* data = malloc(sizeof(command_data));
-    int i = 0;
-
-    if (!contains(buffer, " ")) {
-        data->cmd = buffer;
-        return data;
-    }
-
-    while ((token = strsep(&buffer, " ")) != NULL) {
-        cop_debug("Token: %s", token);
-        if (i == 0) {
-            data->cmd = token;
-            i++;
-            continue;
-        }
-        // CONNECT UDP <ip> <port-cam> <port-mic>
-        if (equals(data->cmd, "CONNECT")) {
-            if (i == 1) {
-                data->protocol = token;
-                i++;
-                continue;
-            }
-            if (i == 2) {
-                data->ip = token;
-                i++;
-                continue;
-            }
-            if (i == 3) {
-                data->port_cam = str_to_int(token);
-                i++;
-                continue;
-            }
-            if (i == 4) {
-                data->port_mic = str_to_int(token);
-                i++;
-                continue;
-            }
-        }
-        if (equals(data->cmd, "DELETE")) {
-            if (i == 1) {
-                data->file_name = token;
-                i++;
-                continue;
-            }
-        }
-        i++;
-    }
-
-    return data;
 }
 
 static void network_send_tcp(const void *data, size_t size, client_data* client_data) {
@@ -206,6 +123,7 @@ static const char* get_state_str() {
     return "UNKNOWN";
 }
 
+// Will send: STATE senderId 192.168.0.24:V;192.168.0.27:A
 void network_send_state(const char* senderId) {
 
     // Camera
@@ -216,8 +134,6 @@ void network_send_state(const char* senderId) {
         msg = concat(msg, senderId);
         msg = concat(msg, " ");
         msg = concat(msg, get_state_str());
-        msg = concat(msg, " ");
-        msg = concat(msg, "CAM");
         size_t msg_length = strlen(msg);
         
         list_item* item = list_get(clone_cam, i);
@@ -234,8 +150,6 @@ void network_send_state(const char* senderId) {
         msg = concat(msg, senderId);
         msg = concat(msg, " ");
         msg = concat(msg, get_state_str());
-        msg = concat(msg, " ");
-        msg = concat(msg, "MIC");
         size_t msg_length = strlen(msg);
         
         list_item* item = list_get(clone_mic, i);
@@ -246,7 +160,33 @@ void network_send_state(const char* senderId) {
 }
 
 void proxy_close() {
-    // TODO: Close sockets from list 2x
+
+    list_item* clone_cam = list_clone(client_data_cam_list);
+    for (int i = 0; i < list_length(clone_cam); i++) {
+        list_item* item = list_get(clone_cam, i);
+        client_data* data = (client_data*)item->data;
+        if (data->socket < 0) {
+            cop_error("[proxy_close] cam: Socket receive not open: %d (ip: %s).", data->socket, data->src_ip);
+        } else {
+            cop_debug("[proxy_close] cam: Close socket (ip: %s).", data->src_ip);
+            close(data->socket);
+        }
+    }
+    list_clear(clone_cam);
+
+    list_item* clone_mic = list_clone(client_data_mic_list);
+    for (int i = 0; i < list_length(clone_mic); i++) {
+        list_item* item = list_get(clone_mic, i);
+        client_data* data = (client_data*)item->data;
+        if (data->socket < 0) {
+            cop_error("[proxy_close] mic: Socket receive not open: %d (ip: %s).", data->socket, data->src_ip);
+        } else {
+            cop_debug("[proxy_close] mic: Close socket (ip: %s).", data->src_ip);
+            close(data->socket);
+        }
+    }
+    list_clear(clone_mic);
+
     if (proxy_receive_udp_socket_cam < 0) {
         cop_error("[proxy_close] cam: Socket receive not open: %d.", proxy_receive_udp_socket_cam);
     } else {
@@ -321,39 +261,25 @@ static list_item* add_ip_to_list(list_item* client_data_list, char* ip, int dest
     return clone;
 }
 
-// TODO: Remove parameter: ip and port
-void proxy_init_cam(char* dest_ip, int dest_port, const char* pwd) {
-    cop_debug("[proxy_init_cam] %s %d.", dest_ip, dest_port);
-    // TODO: Not needed anymore?
-    /*list_item* clone = add_ip_to_list(client_data_cam_list, dest_ip, dest_port);
-    list_clear(client_data_cam_list);
-    client_data_cam_list = clone;*/
+void proxy_init_cam(const char* pwd) {
+    cop_debug("[proxy_init_cam]");
     encryption_pwd_cam = pwd;
     set_next_file_cam();
-
     is_network_running_cam = true;
-
     cop_debug("[proxy_init_cam] Done.");
 }
 
-// TODO: Remove parameter: ip and port
-void proxy_init_mic(char* dest_ip, int dest_port, const char* pwd) {
-    cop_debug("[proxy_init_mic] %s %d.", dest_ip, dest_port);
-    // TODO: Not needed anymore?
-    /*list_item* clone = add_ip_to_list(client_data_mic_list, dest_ip, dest_port);
-    list_clear(client_data_mic_list);
-    client_data_mic_list = clone;*/
+void proxy_init_mic(const char* pwd) {
+    cop_debug("[proxy_init_mic]");
     encryption_pwd_mic = pwd;
     set_next_file_mic();
-
     is_network_running_mic = true;
-
     cop_debug("[proxy_init_mic] Done.");
 }
 
 // We only want to redirect output to localhost again
 void proxy_reset_cam() {
-    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_CAM);
+    cop_debug("[proxy_reset_cam]");
     list_item* clone_cam = list_clone(client_data_cam_list);
     for (int i = 0; i < list_length(clone_cam); i++) {
         clone_cam = list_delete(clone_cam, 0);
@@ -361,15 +287,10 @@ void proxy_reset_cam() {
     list_item* ptr = client_data_cam_list;
     client_data_cam_list = clone_cam;
     list_clear(ptr);
-    // Add client data
-    /*client_data* data = malloc(sizeof(client_data));
-    data->src_ip = strdup(LOCALHOST_IP);
-    data->src_port = PORT_PROXY_DESTINATION_DUMMY_CAM;
-    client_data_cam_list = list_push(client_data_cam_list, data);*/
-    cop_debug("[proxy_reset] Done.");
+    cop_debug("[proxy_reset_cam] Done.");
 }
 void proxy_reset_mic() {
-    cop_debug("[proxy_reset] Resetting proxy to localhost and port %d.", PORT_PROXY_DESTINATION_DUMMY_MIC);
+    cop_debug("[proxy_reset_mic]");
     list_item* clone_mic = list_clone(client_data_mic_list);
     for (int i = 0; i < list_length(clone_mic); i++) {
         client_data_mic_list = list_delete(clone_mic, 0);
@@ -377,12 +298,7 @@ void proxy_reset_mic() {
     list_item* ptr = client_data_mic_list;
     client_data_mic_list = clone_mic;
     list_clear(ptr);
-    // Add client data
-    /*client_data* data = malloc(sizeof(client_data));
-    data->src_ip = strdup(LOCALHOST_IP);
-    data->src_port = PORT_PROXY_DESTINATION_DUMMY_MIC;
-    client_data_mic_list = list_push(client_data_mic_list, data);*/
-    cop_debug("[proxy_reset] Done.");
+    cop_debug("[proxy_reset_mic] Done.");
 }
 
 void proxy_connect_cam(char* dest_ip, int dest_port) {
@@ -839,7 +755,8 @@ static void tcp_return_list_files(int client_socket) {
 
 int network_receive_tcp(void* arg) {
 
-    system_config* config = (system_config*)arg;
+    container_config* container = (container_config*)arg;
+    system_config* config = container->system_config;
 
     struct sockaddr_in serv_addr;
     struct sockaddr_in client_addr;
@@ -893,6 +810,8 @@ int network_receive_tcp(void* arg) {
                 continue;
             }
 
+            command_data* data = malloc(sizeof(command_data));
+
             int i = 0;
             char* token;
             char* cmd;
@@ -900,6 +819,19 @@ int network_receive_tcp(void* arg) {
                 cop_debug("[network_receive_tcp] Token: %s", token);
                 if (i == 0) {
                     cmd = token;
+
+                    if (equals(cmd, "START")) {
+                        container->cb_start();
+                        break;
+                    }
+                    if (equals(cmd, "STOP")) {
+                        container->cb_stop();
+                        break;
+                    }
+                    if (equals(cmd, "RESET")) {
+                        container->cb_reset();
+                        break;
+                    }
 
                     // LIST_FILES: Returns list of files
                     if (equals(cmd, "LIST_FILES")) {
@@ -930,6 +862,40 @@ int network_receive_tcp(void* arg) {
                         break;
                     }
                 }
+                // CONNECT UDP <ip> <port-cam> <port-mic>
+                if (equals(cmd, "CONNECT")) {
+                    if (i == 1) {
+                        data->protocol = token;
+                        i++;
+                        continue;
+                    }
+                    if (i == 2) {
+                        data->ip = token;
+                        i++;
+                        continue;
+                    }
+                    if (i == 3) {
+                        data->port_cam = str_to_int(token);
+                        i++;
+                        continue;
+                    }
+                    if (i == 4) {
+                        data->port_mic = str_to_int(token);
+                        container->cb_connect(data);
+                        i++;
+                        continue;
+                    }
+                }
+                // DELETE <filename>
+                if (equals(data->cmd, "DELETE")) {
+                    if (i == 1) {
+                        data->file_name = token;
+                        container->cb_delete(data);
+                        i++;
+                        continue;
+                    }
+                }
+
                 i++;
             }
         } else {

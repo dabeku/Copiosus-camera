@@ -859,86 +859,88 @@ int sender_initialize(char* url_cam, char* url_mic) {
     /*
      * Video
      */
-    cop_debug("[sender_initialize] Setup video.");
-    pCamFormatCtx = avformat_alloc_context();
-    //pCamFormatCtx->interrupt_callback.callback = interrupt_cb;
-    //pCamFormatCtx->interrupt_callback.opaque = pCamFormatCtx;
+    if (have_video == 1) {
+        cop_debug("[sender_initialize] Setup video.");
+        pCamFormatCtx = avformat_alloc_context();
+        //pCamFormatCtx->interrupt_callback.callback = interrupt_cb;
+        //pCamFormatCtx->interrupt_callback.opaque = pCamFormatCtx;
 
-    if (equals(platform, "linux")) {
-        pCamInputFormat = av_find_input_format("video4linux");
-    } else {
-        pCamInputFormat = av_find_input_format("avfoundation");
-    }
-    av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(cfg_width), "x"), int_to_str(cfg_height)), 0);
-    av_dict_set(&pCamOpt, "framerate", int_to_str(cfg_framerate), 0);
-    
-    ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
-    if (ret != 0) {
-        cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
-        changeState(0);
-        return STATUS_CODE_NOK;
-    }
-
-    if (avformat_find_stream_info(pCamFormatCtx, NULL) < 0) {
-        cop_error("[sender_initialize] Camera: Can't find stream information.");
-        changeState(0);
-        return STATUS_CODE_NOK;
-    }
-    
-    av_dump_format(pCamFormatCtx, 0, pCamName, 0);
-    for(int i=0; i<pCamFormatCtx->nb_streams; i++) {
-        if(pCamFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
-            camVideoStreamIndex = i;
-            break;
+        if (equals(platform, "linux")) {
+            pCamInputFormat = av_find_input_format("video4linux");
+        } else {
+            pCamInputFormat = av_find_input_format("avfoundation");
         }
-    }
-    if (camVideoStreamIndex == -1) {
-        changeState(0);
-        return STATUS_CODE_NOK;
+        av_dict_set(&pCamOpt, "video_size", concat(concat(int_to_str(cfg_width), "x"), int_to_str(cfg_height)), 0);
+        av_dict_set(&pCamOpt, "framerate", int_to_str(cfg_framerate), 0);
+        
+        ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
+        if (ret != 0) {
+            cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
+
+        if (avformat_find_stream_info(pCamFormatCtx, NULL) < 0) {
+            cop_error("[sender_initialize] Camera: Can't find stream information.");
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
+        
+        av_dump_format(pCamFormatCtx, 0, pCamName, 0);
+        for(int i=0; i<pCamFormatCtx->nb_streams; i++) {
+            if(pCamFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+                camVideoStreamIndex = i;
+                break;
+            }
+        }
+        if (camVideoStreamIndex == -1) {
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
+
+        pCamCodec = avcodec_find_decoder(pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
+        if (pCamCodec==NULL) {
+            cop_error("[sender_initialize] Codec %d not found.", pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
+        
+        pCamCodecCtx = avcodec_alloc_context3(pCamCodec);
+        if (avcodec_parameters_to_context(pCamCodecCtx, pCamFormatCtx->streams[camVideoStreamIndex]->codecpar) < 0) {
+            cop_error("[sender_initialize] Failed to copy video codec parameters to decoder context.");
+            changeState(0);
+            return STATUS_CODE_CANT_COPY_CODEC;
+        }
+        
+        if (avcodec_open2(pCamCodecCtx, pCamCodec, NULL) < 0) {
+            cop_error("[sender_initialize] Can't open camera codec.");
+            changeState(0);
+            return STATUS_CODE_CANT_OPEN;
+        }
+        pCamFrame = av_frame_alloc();
+        
+        pCamSwsContext = sws_getContext(pCamCodecCtx->width, pCamCodecCtx->height,
+                                        pCamCodecCtx->pix_fmt,
+                                        video_st->enc->width, video_st->enc->height,
+                                        video_st->enc->pix_fmt,
+                                        SWS_BICUBIC, NULL, NULL, NULL);
+        if (!pCamSwsContext) {
+            cop_error("[sender_initialize] Could not initialize the conversion context.");
+            changeState(0);
+            return STATUS_CODE_NOK;
+        }
+        
+        uint8_t *picbuf;
+        int picbuf_size = av_image_get_buffer_size(video_st->enc->pix_fmt,
+                                                video_st->enc->width,
+                                                video_st->enc->height,
+                                                16);
+        picbuf = (uint8_t*)av_malloc(picbuf_size);
+        newpicture = av_frame_alloc();
+        
+        av_image_fill_arrays (newpicture->data, newpicture->linesize, picbuf, video_st->enc->pix_fmt, video_st->enc->width, video_st->enc->height, 1);
     }
 
-    pCamCodec = avcodec_find_decoder(pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
-    if (pCamCodec==NULL) {
-        cop_error("[sender_initialize] Codec %d not found.", pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
-        changeState(0);
-        return STATUS_CODE_NOK;
-    }
-    
-    pCamCodecCtx = avcodec_alloc_context3(pCamCodec);
-    if (avcodec_parameters_to_context(pCamCodecCtx, pCamFormatCtx->streams[camVideoStreamIndex]->codecpar) < 0) {
-        cop_error("[sender_initialize] Failed to copy video codec parameters to decoder context.");
-        changeState(0);
-        return STATUS_CODE_CANT_COPY_CODEC;
-    }
-    
-    if (avcodec_open2(pCamCodecCtx, pCamCodec, NULL) < 0) {
-        cop_error("[sender_initialize] Can't open camera codec.");
-        changeState(0);
-        return STATUS_CODE_CANT_OPEN;
-    }
-    pCamFrame = av_frame_alloc();
-    
-    pCamSwsContext = sws_getContext(pCamCodecCtx->width, pCamCodecCtx->height,
-                                    pCamCodecCtx->pix_fmt,
-                                    video_st->enc->width, video_st->enc->height,
-                                    video_st->enc->pix_fmt,
-                                    SWS_BICUBIC, NULL, NULL, NULL);
-    if (!pCamSwsContext) {
-        cop_error("[sender_initialize] Could not initialize the conversion context.");
-        changeState(0);
-        return STATUS_CODE_NOK;
-    }
-    
-    uint8_t *picbuf;
-    int picbuf_size = av_image_get_buffer_size(video_st->enc->pix_fmt,
-                                               video_st->enc->width,
-                                               video_st->enc->height,
-                                               16);
-    picbuf = (uint8_t*)av_malloc(picbuf_size);
-    newpicture = av_frame_alloc();
-    
-    av_image_fill_arrays (newpicture->data, newpicture->linesize, picbuf, video_st->enc->pix_fmt, video_st->enc->width, video_st->enc->height, 1);
-    
     /*
      * Audio
      */
@@ -1062,78 +1064,61 @@ int sender_initialize(char* url_cam, char* url_mic) {
     return STATUS_CODE_OK;
 }
 
-static int receive_command(void* arg) {
-    cop_debug("[receive_command].");
-    while (quit == 0) {
-        command_data* command_data = network_receive_udp(PORT_COMMAND_CAMERA);
-
-        if (command_data != NULL) {
-            cop_debug("[receive_command] Received COMMAND: %s", command_data->cmd);
-
-            if (equals(command_data->cmd, "CONNECT")) {
-                if (USE_PROXY) {
-                    if (command_data->port_cam != -1) {
-                        proxy_connect_cam(command_data->ip, command_data->port_cam);
-                    }
-                    if (command_data->port_mic != -1) {
-                        proxy_connect_mic(command_data->ip, command_data->port_mic);
-                    }
-                    // Update previous state with new IP for 'send to'
-                    changeState(state);
-                } else {
-                    cop_debug("[receive_command] TODO: Implement me.");
-                }
-            } else if (equals(command_data->cmd, "START")) {
-                cop_debug("[receive_command] Start");
-                if (USE_PROXY) {
-                    proxy_init_cam(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_CAM, encryptionPwd);
-                    proxy_init_mic(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_MIC, encryptionPwd);
-                    SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
-                    SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
-                    char* url_cam = "udp://";
-                    url_cam = concat(url_cam, LOCALHOST_IP);
-                    url_cam = concat(url_cam, ":");
-                    url_cam = concat(url_cam, int_to_str(PORT_PROXY_LISTEN_CAM));
-                    url_cam = concat(url_cam, MPEG_TS_OPTIONS);
-                    char* url_mic = "udp://";
-                    url_mic = concat(url_mic, LOCALHOST_IP);
-                    url_mic = concat(url_mic, ":");
-                    url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
-                    url_mic = concat(url_mic, MPEG_TS_OPTIONS);
-                    sender_initialize(url_cam, url_mic);
-                } else {
-                    char* url_cam = concat("udp://", command_data->ip);
-                    url_cam = concat(url_cam, ":");
-                    url_cam = concat(url_cam, int_to_str(command_data->port_cam));
-                    url_cam = concat(url_cam, MPEG_TS_OPTIONS);
-                    char* url_mic = concat("udp://", command_data->ip);
-                    url_mic = concat(url_mic, ":");
-                    url_mic = concat(url_mic, int_to_str(command_data->port_mic));
-                    url_mic = concat(url_mic, MPEG_TS_OPTIONS);
-                    sender_initialize(url_cam, url_mic);
-                }
-            } else if (equals(command_data->cmd, "STOP")) {
-                cop_debug("[receive_command] Stop");
-                sender_stop();
-            } else if (equals(command_data->cmd, "DELETE")) {
-                cop_debug("[receive_command] Delete");
-                delete_file(command_data->file_name);
-            } else if (equals(command_data->cmd, "RESET")) {
-                cop_debug("[receive_command] Reset");
-                proxy_reset_cam();
-                proxy_reset_mic();
-                // Update previous state with new IP for 'send to'
-                changeState(state);
-            } else {
-                cop_debug("[receive_command] IGNORE: %s", command_data->cmd);
-            }
-        } else {
-            // Sleep a little bit so we don't flood the logs
-            sleep(1);
-        }
+static void execute_start() {
+    cop_debug("[execute_start]");
+    // Store stream by using proxy when starting app
+    if (pCamName != NULL) {
+        proxy_init_cam(encryptionPwd);
+        SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
     }
-    cop_debug("[receive_command] Done.");
-    return 0;
+    if (pMicName != NULL) {
+        proxy_init_mic(encryptionPwd);
+        SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
+    }
+    
+    char* url_cam = "udp://";
+    url_cam = concat(url_cam, LOCALHOST_IP);
+    url_cam = concat(url_cam, ":");
+    url_cam = concat(url_cam, int_to_str(PORT_PROXY_LISTEN_CAM));
+    url_cam = concat(url_cam, MPEG_TS_OPTIONS);
+
+    char* url_mic = "udp://";
+    url_mic = concat(url_mic, LOCALHOST_IP);
+    url_mic = concat(url_mic, ":");
+    url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
+    url_mic = concat(url_mic, MPEG_TS_OPTIONS);
+
+    sender_initialize(url_cam, url_mic);
+}
+
+static void execute_connect(command_data* command_data) {
+    cop_debug("[execute_connect]");
+    if (command_data->port_cam != -1) {
+        proxy_connect_cam(command_data->ip, command_data->port_cam);
+    }
+    if (command_data->port_mic != -1) {
+        proxy_connect_mic(command_data->ip, command_data->port_mic);
+    }
+    // Update previous state with new IP for 'send to'
+    changeState(state);
+}
+
+static void execute_stop() {
+    cop_debug("[execute_stop]");
+    sender_stop();
+}
+
+static void execute_delete(command_data* command_data) {
+    cop_debug("[execute_delete]");
+    delete_file(command_data->file_name);
+}
+
+static void execute_reset() {
+    cop_debug("[execute_reset]");
+    proxy_reset_cam();
+    proxy_reset_mic();
+    // Update previous state with new IP for 'send to'
+    changeState(state);
 }
 
 void list_devices() {
@@ -1310,6 +1295,11 @@ int main(int argc, char* argv[]) {
         cop_debug("[main] Audio: %s.", pMicName);
     }
 
+    if (pCamName != NULL && pMicName != NULL) {
+        cop_error("[main] It's only possible to specify cam OR mic name");
+        return STATUS_CODE_OK;
+    }
+
     encryptionPwd = pwd;
 
     if (encryptionPwd == NULL) {
@@ -1384,8 +1374,8 @@ int main(int argc, char* argv[]) {
 
     if (TEST_LOCAL) {
         if (USE_PROXY) {
-            proxy_init_cam("192.168.0.24", 1234, encryptionPwd);
-            proxy_init_mic("192.168.0.24", 1235, encryptionPwd);
+            proxy_init_cam(encryptionPwd);
+            proxy_init_mic(encryptionPwd);
             SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
             SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
 
@@ -1418,13 +1408,13 @@ int main(int argc, char* argv[]) {
             );
         }
     } else {
-        SDL_CreateThread(receive_command, "receive_command", NULL);
 
-        // Store stream by using proxy when starting app
-        proxy_init_cam(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_CAM, encryptionPwd);
-        proxy_init_mic(LOCALHOST_IP, PORT_PROXY_DESTINATION_DUMMY_MIC, encryptionPwd);
-        SDL_CreateThread(proxy_receive_udp_cam, "proxy_receive_udp_cam", NULL);
-        SDL_CreateThread(proxy_receive_udp_mic, "proxy_receive_udp_mic", NULL);
+        container_config* container = malloc(sizeof(container_config));
+        container->cb_start = &execute_start;
+        container->cb_connect = &execute_connect;
+        container->cb_stop = &execute_stop;
+        container->cb_delete = &execute_delete;
+        container->cb_reset = &execute_reset;
 
         system_config* config = malloc(sizeof(system_config));
         config->senderId = senderId;
@@ -1433,21 +1423,11 @@ int main(int argc, char* argv[]) {
         config->has_video = pCamName == NULL ? 0 : 1;
         config->has_audio = pMicName == NULL ? 0 : 1;
 
-        SDL_CreateThread(network_receive_tcp, "network_receive_tcp", config);
+        container->system_config = config;
 
-        char* url_cam = "udp://";
-        url_cam = concat(url_cam, LOCALHOST_IP);
-        url_cam = concat(url_cam, ":");
-        url_cam = concat(url_cam, int_to_str(PORT_PROXY_LISTEN_CAM));
-        url_cam = concat(url_cam, MPEG_TS_OPTIONS);
+        SDL_CreateThread(network_receive_tcp, "network_receive_tcp", container);
 
-        char* url_mic = "udp://";
-        url_mic = concat(url_mic, LOCALHOST_IP);
-        url_mic = concat(url_mic, ":");
-        url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
-        url_mic = concat(url_mic, MPEG_TS_OPTIONS);
-
-        sender_initialize(url_cam, url_mic);
+        execute_start();
     }
 
     while (quit == 0) {
