@@ -64,9 +64,9 @@ static void list_clear(list_item* list) {
     }
 }
 
-static void network_send_tcp(const void *data, size_t size, client_data* client_data) {
+static void network_send_tcp(const void *data, size_t size, char* dst_ip) {
 
-    cop_debug("[network_send_tcp] Send data to %s with length: %zu.", client_data->src_ip, size);
+    cop_debug("[network_send_tcp] Send data to %s with length: %zu.", dst_ip, size);
 
     int send_tcp_socket; 
     struct sockaddr_in serv_addr; 
@@ -83,7 +83,7 @@ static void network_send_tcp(const void *data, size_t size, client_data* client_
   
     // assign IP, PORT 
     serv_addr.sin_family = AF_INET; 
-    serv_addr.sin_addr.s_addr = inet_addr(client_data->src_ip); 
+    serv_addr.sin_addr.s_addr = inet_addr(dst_ip); 
     serv_addr.sin_port = htons(PORT_LISTEN_SERVER); 
   
     // connect the client socket to server socket 
@@ -109,54 +109,62 @@ static void network_send_tcp(const void *data, size_t size, client_data* client_
  * 3 = DISCONNECTING
  * x = UNKNOWN
  */
-static const char* get_state_str() {
+static char* get_state_str() {
     if (state == 0) {
-        return "IDLE";
+        return concat("IDLE", "");
     } else if (state == 1) {
-        return "INITIALIZING";
+        return concat("INITIALIZING", "");
     } else if (state == 2) {
         const char* ipSendTo = get_sendto_ip();
         return concat("CONNECTED;", ipSendTo);
     } else if (state == 3) {
-        return "DISCONNECTING";
+        return concat("DISCONNECTING", "");
     }
-    return "UNKNOWN";
+    return concat("UNKNOWN", "");
 }
 
 // Will send: STATE senderId 192.168.0.24:V;192.168.0.27:A
-void network_send_state(const char* senderId) {
+void network_send_state(const char* senderId, char* incl_ip) {
+
+    cop_debug("[network_send_state]");
+
+    char* state_str = get_state_str();
+    char* msg1 = concat("STATE ", senderId);
+    char* msg2 = concat(msg1, " ");
+    char* msg3 = concat(msg2, state_str);
+    size_t msg_length = strlen(msg3);
+
+    if (incl_ip != NULL) {
+        cop_debug("[network_send_state] incl: Send state: %s to: %s.", msg3, incl_ip);
+        network_send_tcp(msg3, msg_length, incl_ip);
+    }
 
     // Camera
     list_item* clone_cam = list_clone(client_data_cam_list);
     for (int i = 0; i < list_length(clone_cam); i++) {
-        const char* msg = "STATE";
-        msg = concat(msg, " ");
-        msg = concat(msg, senderId);
-        msg = concat(msg, " ");
-        msg = concat(msg, get_state_str());
-        size_t msg_length = strlen(msg);
-        
         list_item* item = list_get(clone_cam, i);
         client_data* data = (client_data*)item->data;
-        network_send_tcp(msg, msg_length, data);
+
+        cop_debug("[network_send_state] cam: Send state: %s to: %s.", msg3, data->src_ip);
+        network_send_tcp(msg3, msg_length, data->src_ip);
     }
     list_clear(clone_cam);
 
     // Mic
     list_item* clone_mic = list_clone(client_data_mic_list);
     for (int i = 0; i < list_length(clone_mic); i++) {
-        const char* msg = "STATE";
-        msg = concat(msg, " ");
-        msg = concat(msg, senderId);
-        msg = concat(msg, " ");
-        msg = concat(msg, get_state_str());
-        size_t msg_length = strlen(msg);
-        
         list_item* item = list_get(clone_mic, i);
         client_data* data = (client_data*)item->data;
-        network_send_tcp(msg, msg_length, data);
+
+        cop_debug("[network_send_state] mic: Send state: %s to: %s.", msg3, data->src_ip);
+        network_send_tcp(msg3, msg_length, data->src_ip);
     }
     list_clear(clone_mic);
+
+    free(state_str);
+    free(msg1);
+    free(msg2);
+    free(msg3);
 }
 
 void proxy_close() {
@@ -213,19 +221,31 @@ void server_close() {
 }
 
 static void set_next_file_cam() {
-    file_cam_name = "video_";
-    file_cam_name = concat(file_cam_name, get_timestamp());
-    file_cam_name = concat(file_cam_name, ".ts");
-    cop_debug("[set_next_file_cam] New video file: %s.", file_cam_name);
-    file_cam = fopen(file_cam_name, "ab");
+    char* timestamp = get_timestamp();
+    char* file_cam_name2 = concat("video_", timestamp);
+    char* file_cam_name3 = concat(file_cam_name2, ".ts");
+    cop_debug("[set_next_file_cam] New video file: %s.", file_cam_name3);
+    file_cam = fopen(file_cam_name3, "ab");
+    free(timestamp);
+    free(file_cam_name2);
+    if (file_cam_name != NULL) {
+        free(file_cam_name);
+    }
+    file_cam_name = file_cam_name3;
 }
 
 static void set_next_file_mic() {
-    file_mic_name = "audio_";
-    file_mic_name = concat(file_mic_name, get_timestamp());
-    file_mic_name = concat(file_mic_name, ".ts");
-    cop_debug("[set_next_file_mic] New audio file: %s.", file_mic_name);
-    file_mic = fopen(file_mic_name, "ab");
+    char* timestamp = get_timestamp();
+    char* file_mic_name2 = concat("audio_", timestamp);
+    char* file_mic_name3 = concat(file_mic_name2, ".ts");
+    cop_debug("[set_next_file_mic] New audio file: %s.", file_mic_name3);
+    file_mic = fopen(file_mic_name3, "ab");
+    free(timestamp);
+    free(file_mic_name2);
+    if (file_mic_name != NULL) {
+        free(file_mic_name);
+    }
+    file_mic_name = file_mic_name3;
 }
 
 static list_item* add_ip_to_list(list_item* client_data_list, char* ip, int dest_port) {
@@ -278,8 +298,8 @@ void proxy_init_mic(const char* pwd) {
 }
 
 // We only want to redirect output to localhost again
-void proxy_reset_cam() {
-    cop_debug("[proxy_reset_cam]");
+void proxy_reset_cam(char* reset_ip) {
+    cop_debug("[proxy_reset_cam] %s.", reset_ip);
     list_item* clone_cam = list_clone(client_data_cam_list);
     for (int i = 0; i < list_length(clone_cam); i++) {
         clone_cam = list_delete(clone_cam, 0);
@@ -289,8 +309,8 @@ void proxy_reset_cam() {
     list_clear(ptr);
     cop_debug("[proxy_reset_cam] Done.");
 }
-void proxy_reset_mic() {
-    cop_debug("[proxy_reset_mic]");
+void proxy_reset_mic(char* reset_ip) {
+    cop_debug("[proxy_reset_mic] %s.", reset_ip);
     list_item* clone_mic = list_clone(client_data_mic_list);
     for (int i = 0; i < list_length(clone_mic); i++) {
         client_data_mic_list = list_delete(clone_mic, 0);
@@ -413,8 +433,7 @@ static int proxy_receive_udp(int type, int proxy_receive_udp_socket, int port_pr
             if (type == 0 && file_cam != NULL) {
                 fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, file_cam);
                 long size_in_kb = ftell(file_cam) / 1024;
-                // Set max size to 250 mb
-                //if (size_in_kb > 1024 * 250) {
+                // Set max size to 100 mb
                 if (size_in_kb > 1024 * 100) {
                     fclose(file_cam);
                     set_next_file_cam();
@@ -422,8 +441,7 @@ static int proxy_receive_udp(int type, int proxy_receive_udp_socket, int port_pr
             } else if (type == 1 && file_mic != NULL) {
                 fwrite(sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES, 1, file_mic);
                 long size_in_kb = ftell(file_mic) / 1024;
-                // Set max size to 250 mb
-                //if (size_in_kb > 1024 * 250) {
+                // Set max size to 100 mb
                 if (size_in_kb > 1024 * 100) {
                     fclose(file_mic);
                     set_next_file_mic();
@@ -816,7 +834,7 @@ int network_receive_tcp(void* arg) {
             char* token;
             char* cmd;
             while ((token = strsep(&buffer, " ")) != NULL) {
-                cop_debug("[network_receive_tcp] Token: %s", token);
+                cop_debug("[network_receive_tcp] Token: %s. Index: %d", token, i);
                 if (i == 0) {
                     cmd = token;
 
@@ -826,10 +844,6 @@ int network_receive_tcp(void* arg) {
                     }
                     if (equals(cmd, "STOP")) {
                         container->cb_stop();
-                        break;
-                    }
-                    if (equals(cmd, "RESET")) {
-                        container->cb_reset();
                         break;
                     }
 
@@ -883,16 +897,25 @@ int network_receive_tcp(void* arg) {
                         data->port_mic = str_to_int(token);
                         container->cb_connect(data);
                         i++;
-                        continue;
+                        break;
                     }
                 }
                 // DELETE <filename>
-                if (equals(data->cmd, "DELETE")) {
+                if (equals(cmd, "DELETE")) {
                     if (i == 1) {
                         data->file_name = token;
                         container->cb_delete(data);
                         i++;
-                        continue;
+                        break;
+                    }
+                }
+                // RESET <ip>
+                if (equals(cmd, "RESET")) {
+                    if (i == 1) {
+                        data->reset_ip = token;
+                        container->cb_reset(data);
+                        i++;
+                        break;
                     }
                 }
 

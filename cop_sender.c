@@ -170,7 +170,12 @@ void ePipeHandler(int dummy) {
  */
 static void changeState(int newState) {
     state = newState;
-    network_send_state(senderId);
+    network_send_state(senderId, NULL);
+}
+
+static void changeStateInclIp(int newState, char* incl_ip) {
+    state = newState;
+    network_send_state(senderId, incl_ip);
 }
 
 static int decode_video(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame) {
@@ -1113,12 +1118,12 @@ static void execute_delete(command_data* command_data) {
     delete_file(command_data->file_name);
 }
 
-static void execute_reset() {
+static void execute_reset(command_data* command_data) {
     cop_debug("[execute_reset]");
-    proxy_reset_cam();
-    proxy_reset_mic();
+    proxy_reset_cam(command_data->reset_ip);
+    proxy_reset_mic(command_data->reset_ip);
     // Update previous state with new IP for 'send to'
-    changeState(state);
+    changeStateInclIp(state, command_data->reset_ip);
 }
 
 void list_devices() {
@@ -1332,9 +1337,9 @@ int main(int argc, char* argv[]) {
         cfg_framerate = str_to_int(framerate);
     }
 
-    changeState(0);
-
     senderId = rand_str(32);
+
+    changeState(0);
 
     audio_st = malloc(sizeof(OutputStream));
     video_st = malloc(sizeof(OutputStream));

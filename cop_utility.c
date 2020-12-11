@@ -18,14 +18,19 @@ void cop_debug(const char* format, ...) {
         timeinfo->tm_min,
         timeinfo->tm_sec);
 
-    const char* prefix = concat(output, " [DEBUG] ");
-    format = concat(prefix, format);
-    format = concat(format, "\n");
+    char* prefix = concat(output, " [DEBUG] ");
+    char* format1 = concat(prefix, format);
+    char* format2 = concat(format1, "\n");
 
     va_start(argptr, format);
-    vfprintf(stdout, format, argptr);
+    vfprintf(stdout, format2, argptr);
     va_end(argptr);
     fflush(stdout);
+    
+    free(prefix);
+    free(format1);
+    free(format2);
+
 }
 
 void cop_error(const char* format, ...) {
@@ -46,14 +51,18 @@ void cop_error(const char* format, ...) {
         timeinfo->tm_min,
         timeinfo->tm_sec);
 
-    const char* prefix = concat(output, " [-ERROR-] ");
-    format = concat(prefix, format);
-    format = concat(format, "\n");
+    char* prefix = concat(output, " [-ERROR-] ");
+    char* format1 = concat(prefix, format);
+    char* format2 = concat(format1, "\n");
 
     va_start(argptr, format);
-    vfprintf(stdout, format, argptr);
+    vfprintf(stdout, format2, argptr);
     va_end(argptr);
     fflush(stdout);
+    
+    free(prefix);
+    free(format1);
+    free(format2);
 }
 
 char* get_timestamp() {

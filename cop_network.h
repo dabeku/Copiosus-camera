@@ -47,6 +47,8 @@ typedef struct command_data {
     int port_mic;
     // DELETE
     char* file_name;
+    // RESET
+    char* reset_ip;
 } command_data;
 
 typedef void (*callback)();
@@ -58,7 +60,7 @@ typedef struct container_config {
     callback_cd cb_connect;
     callback cb_stop;
     callback_cd cb_delete;
-    callback cb_reset;
+    callback_cd cb_reset;
 } container_config;
 
 typedef struct client_data {
@@ -70,13 +72,13 @@ typedef struct client_data {
 extern int state;
 extern int quit;
 
-void network_send_state(const char* senderId);
+void network_send_state(const char* senderId, char* incl_ip);
 
 // Close proxy related stuff
 void proxy_close();
 // Reset proxy to 127.0.0.1
-void proxy_reset_cam();
-void proxy_reset_mic();
+void proxy_reset_cam(char* reset_ip);
+void proxy_reset_mic(char* reset_ip);
 // Connect proxy to remote client and port
 void proxy_connect_cam(char* dest_ip, int dest_port);
 void proxy_connect_mic(char* dest_ip, int dest_port);
