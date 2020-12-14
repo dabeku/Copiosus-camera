@@ -840,28 +840,45 @@ int network_receive_tcp(void* arg) {
 
                     if (equals(cmd, "START")) {
                         container->cb_start();
+                        close(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         break;
                     }
                     if (equals(cmd, "STOP")) {
                         container->cb_stop();
+                        close(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         break;
                     }
 
                     // LIST_FILES: Returns list of files
                     if (equals(cmd, "LIST_FILES")) {
                         tcp_return_list_files(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         break;
                     }
 
                     // STATUS: Returns status like temperature
                     if (equals(cmd, "STATUS")) {
                         tcp_return_status(client_socket, config->senderId);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         break;
                     }
 
                     // SCAN: Returns device id, width and height
                     if (equals(cmd, "SCAN")) {
                         tcp_return_scan(client_socket, config->senderId, config->width, config->height, config->has_video, config->has_audio);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         break;
                     }
 
@@ -872,6 +889,9 @@ int network_receive_tcp(void* arg) {
                 if (equals(cmd, "DOWNLOAD")) {
                     if (i == 1) {
                         tcp_return_download(client_socket, token);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         i++;
                         break;
                     }
@@ -896,6 +916,10 @@ int network_receive_tcp(void* arg) {
                     if (i == 4) {
                         data->port_mic = str_to_int(token);
                         container->cb_connect(data);
+                        close(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         i++;
                         break;
                     }
@@ -905,6 +929,10 @@ int network_receive_tcp(void* arg) {
                     if (i == 1) {
                         data->file_name = token;
                         container->cb_delete(data);
+                        close(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         i++;
                         break;
                     }
@@ -914,6 +942,10 @@ int network_receive_tcp(void* arg) {
                     if (i == 1) {
                         data->reset_ip = token;
                         container->cb_reset(data);
+                        close(client_socket);
+                        free(data);
+                        free(string);
+                        free(buffer);
                         i++;
                         break;
                     }
