@@ -547,7 +547,7 @@ char* get_sendto_ip() {
     return buffer;
 }
 
-static const char* get_hostname() {
+static char* get_hostname() {
     int MAX_LENGTH = 256;
     char* hostname = malloc(sizeof(char) * (MAX_LENGTH + 1));
     int ret = gethostname(hostname, MAX_LENGTH + 1);
@@ -560,22 +560,28 @@ static const char* get_hostname() {
 // Will return: SCAN hostname senderId state width height has_video has_audio
 static void tcp_return_scan(int client_socket, const char* senderId, int width, int height, int has_video, int has_audio) {
 
-    const char* buffer = "SCAN ";
-    buffer = concat(buffer, get_hostname());
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, senderId);
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, get_state_str());
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, int_to_str(width));
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, int_to_str(height));
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, int_to_str(has_video));
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, int_to_str(has_audio));
+    char* hostname = get_hostname();
+    char* state = get_state_str();
+    char* width_str = int_to_str(width);
+    char* height_str = int_to_str(height);
+    char* has_video_str = int_to_str(has_video);
+    char* has_audio_str = int_to_str(has_audio);
+    char* buffer1 = concat("SCAN ", hostname);
+    char* buffer2 = concat(buffer1, " ");
+    char* buffer3 = concat(buffer2, senderId);
+    char* buffer4 = concat(buffer3, " ");
+    char* buffer5 = concat(buffer4, state);
+    char* buffer6 = concat(buffer5, " ");
+    char* buffer7 = concat(buffer6, width_str);
+    char* buffer8 = concat(buffer7, " ");
+    char* buffer9 = concat(buffer8, height_str);
+    char* buffer10 = concat(buffer9, " ");
+    char* buffer11 = concat(buffer10, has_video_str);
+    char* buffer12 = concat(buffer11, " ");
+    char* buffer13 = concat(buffer12, has_audio_str);
+    char* base_ptr = buffer13;
 
-    int size = strlen(buffer);
+    int size = strlen(buffer13);
 
     cop_debug("[tcp_return_scan] Send '%d' bytes to caller.", size);
 
@@ -588,20 +594,40 @@ static void tcp_return_scan(int client_socket, const char* senderId, int width, 
             buffSizeToSend = sizeLeftToSend;
         }
         
-        int result = send(client_socket, buffer, buffSizeToSend, 0);
+        int result = send(client_socket, base_ptr, buffSizeToSend, 0);
         if (result < 0) {
             cop_error("[tcp_return_scan] Send failed: %d.", result);
             break;
         }
         sizeLeftToSend -= BUFFER_SIZE;
         // Set start position of sending data
-        buffer = buffer + buffSizeToSend;
+        base_ptr = base_ptr + buffSizeToSend;
     }
 
     cop_debug("[tcp_return_scan] Finishing: Shutdown socket.");
     shutdown(client_socket, SHUT_RDWR);
     cop_debug("[tcp_return_scan] Finishing: Close socket.");
     close(client_socket);
+
+    free(buffer1);
+    free(buffer2);
+    free(buffer3);
+    free(buffer4);
+    free(buffer5);
+    free(buffer6);
+    free(buffer7);
+    free(buffer8);
+    free(buffer9);
+    free(buffer10);
+    free(buffer11);
+    free(buffer12);
+    free(buffer13);
+    free(hostname);
+    free(state);
+    free(width_str);
+    free(height_str);
+    free(has_video_str);
+    free(has_audio_str);
 }
 
 // Will return: STATUS temperature (in milli degrees, divide by 1000)
@@ -615,13 +641,14 @@ static void tcp_return_status(int client_socket, const char* senderId) {
     fscanf(temp_file, "%d", &temp_in_milli_degrees);
     fclose(temp_file);
 
-    const char* buffer = "STATUS";
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, senderId);
-    buffer = concat(buffer, " ");
-    buffer = concat(buffer, int_to_str(temp_in_milli_degrees));
+    char* temp_str = int_to_str(temp_in_milli_degrees);
+    char* buffer1 = concat("STATUS ", senderId);
+    char* buffer2 = concat(buffer1, senderId);
+    char* buffer3 = concat(buffer2, " ");
+    char* buffer4 = concat(buffer3, temp_str);
+    char* base_ptr = buffer4;
 
-    int size = strlen(buffer);
+    int size = strlen(buffer4);
 
     cop_debug("[tcp_return_status] Send '%d' bytes to caller.", size);
 
@@ -634,20 +661,26 @@ static void tcp_return_status(int client_socket, const char* senderId) {
             buffSizeToSend = sizeLeftToSend;
         }
         
-        int result = send(client_socket, buffer, buffSizeToSend, 0);
+        int result = send(client_socket, base_ptr, buffSizeToSend, 0);
         if (result < 0) {
             cop_error("[tcp_return_status] Send failed: %d.", result);
             break;
         }
         sizeLeftToSend -= BUFFER_SIZE;
         // Set start position of sending data
-        buffer = buffer + buffSizeToSend;
+        base_ptr = base_ptr + buffSizeToSend;
     }
 
     cop_debug("[tcp_return_status] Finishing: Shutdown socket.");
     shutdown(client_socket, SHUT_RDWR);
     cop_debug("[tcp_return_status] Finishing: Close socket.");
     close(client_socket);
+
+    free(buffer1);
+    free(buffer2);
+    free(buffer3);
+    free(buffer4);
+    free(temp_str);
 }
 
 static void tcp_return_download(int client_socket, const char* fileName) {
