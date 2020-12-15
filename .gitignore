@@ -2,4 +2,5 @@
 cop_sender
 .vscode
 video_*.ts
+audio_*.ts
 .DS_Store

@@ -38,7 +38,7 @@ int compare(char* str1, char* str2);
 bool contains(char* str, char* find);
 char* rand_str(size_t length);
 unsigned long get_available_space_mb(const char* path);
-void house_keeping(char* path);
+void house_keeping(char* path, char* prefix);
 
 int decode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame);
 int encode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame);

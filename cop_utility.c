@@ -18,14 +18,19 @@ void cop_debug(const char* format, ...) {
         timeinfo->tm_min,
         timeinfo->tm_sec);
 
-    const char* prefix = concat(output, " [DEBUG] ");
-    format = concat(prefix, format);
-    format = concat(format, "\n");
+    char* prefix = concat(output, " [DEBUG] ");
+    char* format1 = concat(prefix, format);
+    char* format2 = concat(format1, "\n");
 
     va_start(argptr, format);
-    vfprintf(stdout, format, argptr);
+    vfprintf(stdout, format2, argptr);
     va_end(argptr);
     fflush(stdout);
+    
+    free(prefix);
+    free(format1);
+    free(format2);
+
 }
 
 void cop_error(const char* format, ...) {
@@ -46,14 +51,18 @@ void cop_error(const char* format, ...) {
         timeinfo->tm_min,
         timeinfo->tm_sec);
 
-    const char* prefix = concat(output, " [-ERROR-] ");
-    format = concat(prefix, format);
-    format = concat(format, "\n");
+    char* prefix = concat(output, " [-ERROR-] ");
+    char* format1 = concat(prefix, format);
+    char* format2 = concat(format1, "\n");
 
     va_start(argptr, format);
-    vfprintf(stdout, format, argptr);
+    vfprintf(stdout, format2, argptr);
     va_end(argptr);
     fflush(stdout);
+    
+    free(prefix);
+    free(format1);
+    free(format2);
 }
 
 char* get_timestamp() {
@@ -125,13 +134,17 @@ int encode(AVCodecContext *avctx, AVFrame *frame, AVPacket *pkt, int *got_frame)
     return 0;
 }
 
-int str_to_int(char* num) {
+static int str_to_uint(char* num) {
     int dec = 0, i, len;
     len = strlen(num);
     for(i=0; i<len; i++){
         dec = dec * 10 + ( num[i] - '0' );
     }
     return dec;
+}
+
+int str_to_int(char * c) {
+    return (*c == '-') ? -str_to_uint(c+1) : str_to_uint(c);
 }
 
 char* int_to_str(int num) {
@@ -173,6 +186,9 @@ bool contains(char* str, char* find) {
 
 char* rand_str(size_t length) {
 
+    // Init seed generator so we get a different value
+    srand (time(NULL));
+
     static char charset[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";        
     char *randomString = NULL;
 
@@ -203,7 +219,11 @@ unsigned long get_available_space_mb(const char* path) {
     return available / 1024;
 }
 
-void house_keeping(char* current_file) {
+/*
+ * Removes oldest files if we need space.
+ * prefix: "video_" or "audio_"
+ */
+void house_keeping(char* current_file, char* prefix) {
 
     if (current_file == NULL) {
         return;
@@ -218,7 +238,7 @@ void house_keeping(char* current_file) {
     char* oldest_file = NULL;
 
     while ((entry = readdir(dir)) != NULL) {
-        if (contains(entry->d_name, "video_")) {
+        if (contains(entry->d_name, prefix)) {
             if (oldest_file == NULL) {
                 oldest_file = strdup(entry->d_name);
             } else {
