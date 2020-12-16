@@ -863,10 +863,16 @@ int network_receive_tcp(void* arg) {
 
             command_data* data = malloc(sizeof(command_data));
 
+            char* token = string;
+            char* end = string;
+
+            cop_debug("[network_receive_tcp] String: %s.", string);
+
             int i = 0;
-            char* token;
             char* cmd;
-            while ((token = strsep(&buffer, " ")) != NULL) {
+            while(token != NULL) {
+                // This is the only way to use strsep() without causing memory leaks
+                strsep(&end, " ");
                 cop_debug("[network_receive_tcp] Token: %s. Index: %d", token, i);
                 if (i == 0) {
                     cmd = token;
@@ -874,57 +880,36 @@ int network_receive_tcp(void* arg) {
                     if (equals(cmd, "START")) {
                         container->cb_start();
                         close(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         break;
                     }
                     if (equals(cmd, "STOP")) {
                         container->cb_stop();
                         close(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         break;
                     }
 
                     // LIST_FILES: Returns list of files
                     if (equals(cmd, "LIST_FILES")) {
                         tcp_return_list_files(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         break;
                     }
 
                     // STATUS: Returns status like temperature
                     if (equals(cmd, "STATUS")) {
                         tcp_return_status(client_socket, config->senderId);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         break;
                     }
 
                     // SCAN: Returns device id, width and height
                     if (equals(cmd, "SCAN")) {
                         tcp_return_scan(client_socket, config->senderId, config->width, config->height, config->has_video, config->has_audio);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         break;
                     }
-
-                    i++;
-                    continue;
                 }
                 // DOWNLOAD: Returns single file
                 if (equals(cmd, "DOWNLOAD")) {
                     if (i == 1) {
                         tcp_return_download(client_socket, token);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         i++;
                         break;
                     }
@@ -933,26 +918,17 @@ int network_receive_tcp(void* arg) {
                 if (equals(cmd, "CONNECT")) {
                     if (i == 1) {
                         data->protocol = token;
-                        i++;
-                        continue;
                     }
                     if (i == 2) {
                         data->ip = token;
-                        i++;
-                        continue;
                     }
                     if (i == 3) {
                         data->port_cam = str_to_int(token);
-                        i++;
-                        continue;
                     }
                     if (i == 4) {
                         data->port_mic = str_to_int(token);
                         container->cb_connect(data);
                         close(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         i++;
                         break;
                     }
@@ -963,9 +939,6 @@ int network_receive_tcp(void* arg) {
                         data->file_name = token;
                         container->cb_delete(data);
                         close(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         i++;
                         break;
                     }
@@ -976,16 +949,18 @@ int network_receive_tcp(void* arg) {
                         data->reset_ip = token;
                         container->cb_reset(data);
                         close(client_socket);
-                        free(data);
-                        free(string);
-                        free(buffer);
                         i++;
                         break;
                     }
                 }
 
                 i++;
+                token = end;
             }
+
+            free(data);
+            free(string);
+            free(buffer);
         } else {
             close(client_socket);
             cop_error("[network_receive_tcp] Receive failed.");
