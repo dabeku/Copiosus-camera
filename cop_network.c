@@ -643,12 +643,11 @@ static void tcp_return_status(int client_socket, const char* senderId) {
 
     char* temp_str = int_to_str(temp_in_milli_degrees);
     char* buffer1 = concat("STATUS ", senderId);
-    char* buffer2 = concat(buffer1, senderId);
-    char* buffer3 = concat(buffer2, " ");
-    char* buffer4 = concat(buffer3, temp_str);
-    char* base_ptr = buffer4;
+    char* buffer2 = concat(buffer1, " ");
+    char* buffer3 = concat(buffer2, temp_str);
+    char* base_ptr = buffer3;
 
-    int size = strlen(buffer4);
+    int size = strlen(buffer3);
 
     cop_debug("[tcp_return_status] Send '%d' bytes to caller.", size);
 
@@ -679,7 +678,6 @@ static void tcp_return_status(int client_socket, const char* senderId) {
     free(buffer1);
     free(buffer2);
     free(buffer3);
-    free(buffer4);
     free(temp_str);
 }
 
