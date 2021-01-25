@@ -349,7 +349,7 @@ void proxy_connect_mic(char* dest_ip, int dest_port) {
 }
 
 // Type = 0: cam, 1: mic
-void proxy_send_udp(int type, const char* data) {
+void proxy_send_udp(int type, const char* data, int size) {
 
     static struct sockaddr_in dest_addr;
 
@@ -364,7 +364,7 @@ void proxy_send_udp(int type, const char* data) {
             if (cl_data->socket < 0) {
                 cop_error("[proxy_send_udp] cam: Socket not available: %d", cl_data->socket);
             }
-            int result = sendto(cl_data->socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            int result = sendto(cl_data->socket, data, size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (result < 0) {
                 cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
             }
@@ -381,7 +381,7 @@ void proxy_send_udp(int type, const char* data) {
             if (cl_data->socket < 0) {
                 cop_error("[proxy_send_udp] mic: Socket not available: %d", cl_data->socket);
             }
-            int result = sendto(cl_data->socket, data, PROXY_SEND_BUFFER_SIZE_BYTES, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            int result = sendto(cl_data->socket, data, size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
             if (result < 0) {
                 cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
             }
@@ -465,7 +465,7 @@ static int proxy_receive_udp(int type, int proxy_receive_udp_socket, int port_pr
                 }
             }
 
-            proxy_send_udp(type, sendBuffer);
+            proxy_send_udp(type, sendBuffer, PROXY_SEND_BUFFER_SIZE_BYTES);
             memcpy(sendBuffer, &buffer[PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex], read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex));
             sendIndex = read - (PROXY_SEND_BUFFER_SIZE_BYTES - sendIndex);
         }

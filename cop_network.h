@@ -26,9 +26,10 @@
 
 // Packet size is 1472 by default which is the limit for VPN packets
 // If this makes problem you can set the pkt_size url parameter like
-// in this example: "udp://192.168.0.24:1235?pkt_size=1472"
-#define PROXY_SEND_BUFFER_SIZE_BYTES 1472
-#define PROXY_BUFFER_SIZE_BYTES 1472
+// in this example: "udp://192.168.0.24:1235?pkt_size=1472".
+// We use 188 * 7 = 1316 since mpegts packets are 188 bytes long.
+#define PROXY_SEND_BUFFER_SIZE_BYTES 1316
+#define PROXY_BUFFER_SIZE_BYTES 1316
 
 typedef struct system_config {
     const char* senderId;
