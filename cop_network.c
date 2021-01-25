@@ -313,7 +313,7 @@ void proxy_reset_mic(char* reset_ip) {
     cop_debug("[proxy_reset_mic] %s.", reset_ip);
     list_item* clone_mic = list_clone(client_data_mic_list);
     for (int i = 0; i < list_length(clone_mic); i++) {
-        client_data_mic_list = list_delete(clone_mic, 0);
+        clone_mic = list_delete(clone_mic, 0);
     }
     list_item* ptr = client_data_mic_list;
     client_data_mic_list = clone_mic;
