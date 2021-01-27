@@ -1135,8 +1135,8 @@ static void execute_delete(command_data* command_data) {
 
 static void execute_reset(command_data* command_data) {
     cop_debug("[execute_reset]");
-    proxy_reset_cam(command_data->reset_ip);
-    proxy_reset_mic(command_data->reset_ip);
+    proxy_remove_client_cam(command_data->reset_ip);
+    proxy_remove_client_mic(command_data->reset_ip);
     // Update previous state with new IP for 'send to'
     changeStateInclIp(state, command_data->reset_ip);
 }

@@ -298,8 +298,8 @@ void proxy_init_mic(const char* pwd) {
 }
 
 // We only want to redirect output to localhost again
-void proxy_reset_cam(char* reset_ip) {
-    cop_debug("[proxy_reset_cam] %s.", reset_ip);
+void proxy_remove_all_clients_cam() {
+    cop_debug("[proxy_remove_all_clients_cam]");
     list_item* clone_cam = list_clone(client_data_cam_list);
     for (int i = 0; i < list_length(clone_cam); i++) {
         clone_cam = list_delete(clone_cam, 0);
@@ -307,10 +307,10 @@ void proxy_reset_cam(char* reset_ip) {
     list_item* ptr = client_data_cam_list;
     client_data_cam_list = clone_cam;
     list_clear(ptr);
-    cop_debug("[proxy_reset_cam] Done.");
+    cop_debug("[proxy_remove_all_clients_cam] Done.");
 }
-void proxy_reset_mic(char* reset_ip) {
-    cop_debug("[proxy_reset_mic] %s.", reset_ip);
+void proxy_remove_all_clients_mic() {
+    cop_debug("[proxy_remove_all_clients_mic]");
     list_item* clone_mic = list_clone(client_data_mic_list);
     for (int i = 0; i < list_length(clone_mic); i++) {
         clone_mic = list_delete(clone_mic, 0);
@@ -318,7 +318,46 @@ void proxy_reset_mic(char* reset_ip) {
     list_item* ptr = client_data_mic_list;
     client_data_mic_list = clone_mic;
     list_clear(ptr);
-    cop_debug("[proxy_reset_mic] Done.");
+    cop_debug("[proxy_remove_all_clients_mic] Done.");
+}
+
+void proxy_remove_client_cam(char* reset_ip) {
+    cop_debug("[proxy_remove_client_cam] %s.", reset_ip);
+    list_item* clone_cam = list_clone(client_data_cam_list);
+    int i = 0;
+    for (; i < list_length(clone_cam); i++) {
+        list_item* item = list_get(clone_cam, i);
+        client_data* data = (client_data*)item->data;
+        if (equals(data->src_ip, reset_ip)) {
+            break;
+        }
+    }
+    if (i < list_length(clone_cam)) {
+        clone_cam = list_delete(clone_cam, i);
+    }
+    list_item* ptr = client_data_cam_list;
+    client_data_cam_list = clone_cam;
+    list_clear(ptr);
+    cop_debug("[proxy_remove_client_cam] Done.");
+}
+void proxy_remove_client_mic(char* reset_ip) {
+    cop_debug("[proxy_remove_client_mic] %s.", reset_ip);
+    list_item* clone_mic = list_clone(client_data_mic_list);
+    int i = 0;
+    for (; i < list_length(clone_mic); i++) {
+        list_item* item = list_get(clone_mic, i);
+        client_data* data = (client_data*)item->data;
+        if (equals(data->src_ip, reset_ip)) {
+            break;
+        }
+    }
+    if (i < list_length(clone_mic)) {
+        clone_mic = list_delete(clone_mic, i);
+    }
+    list_item* ptr = client_data_mic_list;
+    client_data_mic_list = clone_mic;
+    list_clear(ptr);
+    cop_debug("[proxy_remove_client_mic] Done.");
 }
 
 void proxy_connect_cam(char* dest_ip, int dest_port) {
@@ -328,10 +367,6 @@ void proxy_connect_cam(char* dest_ip, int dest_port) {
     list_item* ptr = client_data_cam_list;
     client_data_cam_list = clone;
     list_clear(ptr);
-    /*client_data* data = malloc(sizeof(client_data));
-    data->src_ip = strdup(dest_ip);
-    data->src_port = dest_port;
-    client_data_cam_list = list_push(client_data_cam_list, data);*/
     cop_debug("[proxy_connect_cam] Done.");
 }
 void proxy_connect_mic(char* dest_ip, int dest_port) {
@@ -341,10 +376,6 @@ void proxy_connect_mic(char* dest_ip, int dest_port) {
     list_item* ptr = client_data_mic_list;
     client_data_mic_list = clone;
     list_clear(ptr);
-    /*client_data* data = malloc(sizeof(client_data));
-    data->src_ip = strdup(dest_ip);
-    data->src_port = dest_port;
-    client_data_mic_list = list_push(client_data_mic_list, data);*/
     cop_debug("[proxy_connect_mic] Done.");
 }
 
