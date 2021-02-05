@@ -50,6 +50,10 @@ typedef struct command_data {
     char* file_name;
     // RESET
     char* reset_ip;
+    // STOP
+    char* stop_ip;
+    // START
+    char* start_ip;
 } command_data;
 
 typedef void (*callback)();
@@ -57,9 +61,9 @@ typedef void (*callback_cd)(command_data* command_data);
 
 typedef struct container_config {
     system_config* system_config;
-    callback cb_start;
+    callback_cd cb_start;
     callback_cd cb_connect;
-    callback cb_stop;
+    callback_cd cb_stop;
     callback_cd cb_delete;
     callback_cd cb_reset;
 } container_config;

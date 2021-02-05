@@ -907,12 +907,14 @@ int network_receive_tcp(void* arg) {
                     cmd = token;
 
                     if (equals(cmd, "START")) {
-                        container->cb_start();
+                        data->start_ip = inet_ntoa(client_addr.sin_addr);
+                        container->cb_start(data);
                         close(client_socket);
                         break;
                     }
                     if (equals(cmd, "STOP")) {
-                        container->cb_stop();
+                        data->stop_ip = inet_ntoa(client_addr.sin_addr);
+                        container->cb_stop(data);
                         close(client_socket);
                         break;
                     }

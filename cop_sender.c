@@ -701,10 +701,10 @@ void delete_file(char* file_name) {
     remove(file_name);
 }
 
-void sender_stop() {
-    cop_debug("[sender_stop].");
+void sender_stop(char* stop_ip) {
+    cop_debug("[sender_stop] Source ip: %s.", stop_ip);
 
-    changeState(3);
+    changeStateInclIp(3, stop_ip);
 
     isAudioQuit = 1;
     isVideoQuit = 1;
@@ -713,13 +713,13 @@ void sender_stop() {
 
     if (output_context_cam == NULL) {
         cop_debug("[sender_stop] cam: Output context not set. Do nothing.");
-        changeState(0);
+        changeStateInclIp(0, stop_ip);
         return;
     }
 
     if (output_context_mic == NULL) {
         cop_debug("[sender_stop] mic: Output context not set. Do nothing.");
-        changeState(0);
+        changeStateInclIp(0, stop_ip);
         return;
     }
 
@@ -776,7 +776,7 @@ void sender_stop() {
 
     cop_debug("[sender_stop] Change state.");
 
-    changeState(0);
+    changeStateInclIp(0, stop_ip);
 
     cop_debug("[sender_stop] Done.");
 }
@@ -1084,7 +1084,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
     return STATUS_CODE_OK;
 }
 
-static void execute_start() {
+static void execute_start(command_data* command_data) {
     cop_debug("[execute_start]");
     // Store stream by using proxy when starting app
     if (pCamName != NULL) {
@@ -1109,6 +1109,10 @@ static void execute_start() {
     url_mic = concat(url_mic, MPEG_TS_OPTIONS);
 
     sender_initialize(url_cam, url_mic);
+
+    if (command_data != NULL) {
+        network_send_state(senderId, command_data->start_ip);
+    }
 }
 
 static void execute_connect(command_data* command_data) {
@@ -1123,9 +1127,9 @@ static void execute_connect(command_data* command_data) {
     changeState(state);
 }
 
-static void execute_stop() {
+static void execute_stop(command_data* command_data) {
     cop_debug("[execute_stop]");
-    sender_stop();
+    sender_stop(command_data->stop_ip);
 }
 
 static void execute_delete(command_data* command_data) {
@@ -1447,7 +1451,7 @@ int main(int argc, char* argv[]) {
 
         SDL_CreateThread(network_receive_tcp, "network_receive_tcp", container);
 
-        execute_start();
+        execute_start(NULL);
     }
 
     while (quit == 0) {
