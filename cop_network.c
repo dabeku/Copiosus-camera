@@ -164,7 +164,9 @@ void network_send_state(const char* senderId, char* incl_ip) {
     for (int i = 0; i < list_length(clone_cam); i++) {
         list_item* item = list_get(clone_cam, i);
         client_data* data = (client_data*)item->data;
-
+        if (incl_ip != NULL && equals(incl_ip, data->src_ip)) {
+            continue;
+        }
         cop_debug("[network_send_state] cam: Send state: %s to: %s.", msg3, data->src_ip);
         network_send_tcp(msg3, msg_length, data->src_ip);
     }
@@ -175,7 +177,9 @@ void network_send_state(const char* senderId, char* incl_ip) {
     for (int i = 0; i < list_length(clone_mic); i++) {
         list_item* item = list_get(clone_mic, i);
         client_data* data = (client_data*)item->data;
-
+        if (incl_ip != NULL && equals(incl_ip, data->src_ip)) {
+            continue;
+        }
         cop_debug("[network_send_state] mic: Send state: %s to: %s.", msg3, data->src_ip);
         network_send_tcp(msg3, msg_length, data->src_ip);
     }

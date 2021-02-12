@@ -781,10 +781,10 @@ void sender_stop(char* stop_ip) {
     cop_debug("[sender_stop] Done.");
 }
 
-int sender_initialize(char* url_cam, char* url_mic) {
+int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
     cop_debug("[sender_initialize].");
 
-    changeState(1);
+    changeStateInclIp(1, start_ip);
 
     isAudioQuit = 0;
     isVideoQuit = 0;
@@ -804,7 +804,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
     avformat_alloc_output_context2(&output_context_cam, NULL, "mpegts", url_cam);
     if (!output_context_cam) {
         cop_error("[sender_initialize] cam: Can't allocate output context.");
-        changeState(0);
+        changeStateInclIp(0, start_ip);
         return STATUS_CODE_CANT_ALLOCATE;
     }
     output_format_cam = output_context_cam->oformat;
@@ -813,7 +813,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
     avformat_alloc_output_context2(&output_context_mic, NULL, "mpegts", url_mic);
     if (!output_context_mic) {
         cop_error("[sender_initialize] mic: Can't allocate output context.");
-        changeState(0);
+        changeStateInclIp(0, start_ip);
         return STATUS_CODE_CANT_ALLOCATE;
     }
     output_format_mic = output_context_mic->oformat;
@@ -849,14 +849,14 @@ int sender_initialize(char* url_cam, char* url_mic) {
         ret = avio_open(&output_context_cam->pb, url_cam, AVIO_FLAG_WRITE);
         if (ret < 0) {
             cop_error("[sender_initialize] cam: Can't open '%s': %s.", url_cam, av_err2str(ret));
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_ALLOCATE;
         }
         // Write the stream header
         ret = avformat_write_header(output_context_cam, &opt);
         if (ret < 0) {
             cop_error("[sender_initialize] cam: Can't write header: %s.", av_err2str(ret));
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
     }
@@ -864,14 +864,14 @@ int sender_initialize(char* url_cam, char* url_mic) {
         ret = avio_open(&output_context_mic->pb, url_mic, AVIO_FLAG_WRITE);
         if (ret < 0) {
             cop_error("[sender_initialize] mic: Can't open '%s': %s.", url_mic, av_err2str(ret));
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_ALLOCATE;
         }
 
         ret = avformat_write_header(output_context_mic, &opt);
         if (ret < 0) {
             cop_error("[sender_initialize] mic: Can't write header: %s.", av_err2str(ret));
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
     }
@@ -896,13 +896,13 @@ int sender_initialize(char* url_cam, char* url_mic) {
         ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
         if (ret != 0) {
             cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
 
         if (avformat_find_stream_info(pCamFormatCtx, NULL) < 0) {
             cop_error("[sender_initialize] Camera: Can't find stream information.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         
@@ -914,27 +914,27 @@ int sender_initialize(char* url_cam, char* url_mic) {
             }
         }
         if (camVideoStreamIndex == -1) {
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
 
         pCamCodec = avcodec_find_decoder(pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
         if (pCamCodec==NULL) {
             cop_error("[sender_initialize] Codec %d not found.", pCamFormatCtx->streams[camVideoStreamIndex]->codecpar->codec_id);
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         
         pCamCodecCtx = avcodec_alloc_context3(pCamCodec);
         if (avcodec_parameters_to_context(pCamCodecCtx, pCamFormatCtx->streams[camVideoStreamIndex]->codecpar) < 0) {
             cop_error("[sender_initialize] Failed to copy video codec parameters to decoder context.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_COPY_CODEC;
         }
         
         if (avcodec_open2(pCamCodecCtx, pCamCodec, NULL) < 0) {
             cop_error("[sender_initialize] Can't open camera codec.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_OPEN;
         }
         pCamFrame = av_frame_alloc();
@@ -946,7 +946,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
                                         SWS_BICUBIC, NULL, NULL, NULL);
         if (!pCamSwsContext) {
             cop_error("[sender_initialize] Could not initialize the conversion context.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         
@@ -976,7 +976,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         }
         cop_debug("[sender_initialize] Audio stream index: %d.", camAudioStreamIndex);
         if (camAudioStreamIndex == -1) {
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         
@@ -984,7 +984,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         pMicCodec = avcodec_find_decoder(pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
         if (pMicCodec==NULL) {
             cop_error("[sender_initialize] Codec %d not found.", pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         
@@ -992,14 +992,14 @@ int sender_initialize(char* url_cam, char* url_mic) {
         pMicCodecCtx = avcodec_alloc_context3(pMicCodec);
         if (avcodec_parameters_to_context(pMicCodecCtx, pMicFormatCtx->streams[camAudioStreamIndex]->codecpar) < 0) {
             cop_error("[sender_initialize] Failed to copy audio codec parameters to decoder context.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_COPY_CODEC;
         }
         
         cop_debug("[sender_initialize] Calling avcodec_open2().");
         if (avcodec_open2(pMicCodecCtx, pMicCodec, NULL) < 0) {
             cop_error("[sender_initialize] Can't open audio codec");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_OPEN;
         }
         
@@ -1007,7 +1007,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         decoded_frame = av_frame_alloc();
         if (!decoded_frame) {
             cop_error("[sender_initialize] Could not allocate audio frame.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_CANT_ALLOCATE;
         }
         
@@ -1031,7 +1031,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         ret = av_frame_get_buffer(final_frame, 0);
         if (ret < 0) {
             cop_error("[sender_initialize] Error allocating an audio buffer.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
         // Create resampler context
@@ -1039,7 +1039,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         swr_ctx = swr_alloc();
         if (!swr_ctx) {
             cop_error("[sender_initialize] Could not allocate resampler context.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
 
@@ -1060,7 +1060,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         // Initialize the resampling context
         if ((ret = swr_init(swr_ctx)) < 0) {
             cop_error("[sender_initialize] Failed to initialize the resampling context.");
-            changeState(0);
+            changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
     }
@@ -1079,7 +1079,7 @@ int sender_initialize(char* url_cam, char* url_mic) {
         audio_thread = SDL_CreateThread(write_audio, "write_audio", container);
     }
     
-    changeState(2);
+    changeStateInclIp(2, start_ip);
 
     return STATUS_CODE_OK;
 }
@@ -1108,10 +1108,10 @@ static void execute_start(command_data* command_data) {
     url_mic = concat(url_mic, int_to_str(PORT_PROXY_LISTEN_MIC));
     url_mic = concat(url_mic, MPEG_TS_OPTIONS);
 
-    sender_initialize(url_cam, url_mic);
-
     if (command_data != NULL) {
-        network_send_state(senderId, command_data->start_ip);
+        sender_initialize(url_cam, url_mic, command_data->start_ip);
+    } else {
+        sender_initialize(url_cam, url_mic, NULL);
     }
 }
 
@@ -1426,11 +1426,12 @@ int main(int argc, char* argv[]) {
                         concat(":", int_to_str(PORT_PROXY_LISTEN_MIC))
                     ),
                     MPEG_TS_OPTIONS
-                ));
+                ), NULL);
         } else {
             sender_initialize(
                 concat("udp://192.168.0.24:1234", MPEG_TS_OPTIONS),
-                concat("udp://192.168.0.24:1235", MPEG_TS_OPTIONS)
+                concat("udp://192.168.0.24:1235", MPEG_TS_OPTIONS),
+                NULL
             );
         }
     } else {
