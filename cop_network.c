@@ -34,10 +34,16 @@ static const char* encryption_pwd_mic = NULL;
 struct list_item* client_data_cam_list = NULL;
 struct list_item* client_data_mic_list = NULL;
 
+SDL_mutex *mutex = NULL;
+
 typedef struct FileItem {
     char* file_name;
     long file_size_kb;
 } FileItem;
+
+void network_init() {
+    mutex = SDL_CreateMutex();
+}
 
 static list_item* list_clone(list_item* list) {
     struct list_item* clone = NULL;
@@ -78,6 +84,8 @@ static void network_send_tcp(const void *data, size_t size, char* dst_ip) {
         return;
     }
 
+
+
     cop_debug("[network_send_tcp] Socket successfully created.");
     bzero(&serv_addr, sizeof(serv_addr)); 
   
@@ -85,21 +93,33 @@ static void network_send_tcp(const void *data, size_t size, char* dst_ip) {
     serv_addr.sin_family = AF_INET; 
     serv_addr.sin_addr.s_addr = inet_addr(dst_ip); 
     serv_addr.sin_port = htons(PORT_LISTEN_SERVER); 
-  
+
+    /*
+     * Attention: We need to synchronize call of sendto() of UDP with calls to connect() and send() of TCP.
+     * Otherwise there will be a strange behavior for TCP connection where the app will send too much data
+     * although it's restricted by length of the send() method.
+     */
+    SDL_LockMutex(mutex);
+
     // connect the client socket to server socket 
     if (connect(send_tcp_socket, (struct sockaddr*) &serv_addr, sizeof(serv_addr)) != 0) { 
         cop_error("[network_send_tcp] Connection with the server failed."); 
+        SDL_UnlockMutex(mutex);
         return;
     }
-  
-    // function for chat 
+
     int result = send(send_tcp_socket, data, size, 0);
+
+    SDL_UnlockMutex(mutex);
+
     if (result < 0) {
         cop_error("[network_send_tcp] Send failed: %d.", result);
         return;
     }
 
     close(send_tcp_socket); 
+
+    
 }
 
 /*
@@ -395,7 +415,10 @@ void proxy_send_udp(int type, const char* data, int size) {
             if (cl_data->socket < 0) {
                 cop_error("[proxy_send_udp] cam: Socket not available: %d", cl_data->socket);
             }
+            // Attention: We need to synchronize call of sendto() of UDP with calls to connect() and send() of TCP.
+            SDL_LockMutex(mutex);
             int result = sendto(cl_data->socket, data, size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            SDL_UnlockMutex(mutex);
             if (result < 0) {
                 cop_error("[proxy_send_udp] cam: Could not send data. Result: %d.", result);
             }
@@ -412,7 +435,10 @@ void proxy_send_udp(int type, const char* data, int size) {
             if (cl_data->socket < 0) {
                 cop_error("[proxy_send_udp] mic: Socket not available: %d", cl_data->socket);
             }
+            // Attention: We need to synchronize call of sendto() of UDP with calls to connect() and send() of TCP.
+            SDL_LockMutex(mutex);
             int result = sendto(cl_data->socket, data, size, 0, (struct sockaddr *)&dest_addr, sizeof(dest_addr));
+            SDL_UnlockMutex(mutex);
             if (result < 0) {
                 cop_error("[proxy_send_udp] mic: Could not send data. Result: %d.", result);
             }

@@ -77,6 +77,8 @@ typedef struct client_data {
 extern int state;
 extern int quit;
 
+void network_init();
+
 void network_send_state(const char* senderId, char* incl_ip);
 
 // Close proxy related stuff

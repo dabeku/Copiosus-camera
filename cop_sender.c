@@ -1200,6 +1200,8 @@ int main(int argc, char* argv[]) {
     avdevice_register_all();
     // Initialize networking
     avformat_network_init();
+    // Initialize network
+    network_init();
 
     char* platformParam = NULL;
     char* cmd = NULL;
