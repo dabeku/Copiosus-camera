@@ -26,9 +26,10 @@
 
 // Packet size is 1472 by default which is the limit for VPN packets
 // If this makes problem you can set the pkt_size url parameter like
-// in this example: "udp://192.168.0.24:1235?pkt_size=1472"
-#define PROXY_SEND_BUFFER_SIZE_BYTES 1472
-#define PROXY_BUFFER_SIZE_BYTES 1472
+// in this example: "udp://192.168.0.24:1235?pkt_size=1472".
+// We use 188 * 7 = 1316 since mpegts packets are 188 bytes long.
+#define PROXY_SEND_BUFFER_SIZE_BYTES 1316
+#define PROXY_BUFFER_SIZE_BYTES 1316
 
 typedef struct system_config {
     const char* senderId;
@@ -49,6 +50,10 @@ typedef struct command_data {
     char* file_name;
     // RESET
     char* reset_ip;
+    // STOP
+    char* stop_ip;
+    // START
+    char* start_ip;
 } command_data;
 
 typedef void (*callback)();
@@ -56,9 +61,9 @@ typedef void (*callback_cd)(command_data* command_data);
 
 typedef struct container_config {
     system_config* system_config;
-    callback cb_start;
+    callback_cd cb_start;
     callback_cd cb_connect;
-    callback cb_stop;
+    callback_cd cb_stop;
     callback_cd cb_delete;
     callback_cd cb_reset;
 } container_config;
@@ -72,13 +77,17 @@ typedef struct client_data {
 extern int state;
 extern int quit;
 
+void network_init();
+
 void network_send_state(const char* senderId, char* incl_ip);
 
 // Close proxy related stuff
 void proxy_close();
 // Reset proxy to 127.0.0.1
-void proxy_reset_cam(char* reset_ip);
-void proxy_reset_mic(char* reset_ip);
+void proxy_remove_all_clients_cam();
+void proxy_remove_all_clients_mic();
+void proxy_remove_client_cam(char* reset_ip);
+void proxy_remove_client_mic(char* reset_ip);
 // Connect proxy to remote client and port
 void proxy_connect_cam(char* dest_ip, int dest_port);
 void proxy_connect_mic(char* dest_ip, int dest_port);
