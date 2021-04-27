@@ -294,8 +294,8 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
         cop_debug("[add_stream] Set codec to '%d' (28 = H264).", codec_id);
         c->codec_id = codec_id;
 
-        c->bit_rate = 400000;
-        c->profile = FF_PROFILE_H264_BASELINE;
+        c->bit_rate = 800000;
+        //c->profile = FF_PROFILE_H264_BASELINE;
         /* Resolution must be a multiple of two. */
         c->width    = cfg_width;
         c->height   = cfg_height;
@@ -307,16 +307,12 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
 
         //c->gop_size      = 12; /* emit one intra frame every twelve frames at most */
         c->pix_fmt       = AV_PIX_FMT_YUV420P;
-        if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-            /* just for testing, we also add B-frames */
+        /*if (c->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
             c->max_b_frames = 1;
         }
         if (c->codec_id == AV_CODEC_ID_MPEG1VIDEO) {
-            /* Needed to avoid using macroblocks in which some coeffs overflow.
-             * This does not happen with normal video, it just happens here as
-             * the motion of the chroma plane does not match the luma plane. */
             c->mb_decision = 2;
-        }
+        }*/
         
         //av_opt_set(c->priv_data, "preset", "ultrafast", 0);
         av_opt_set(c->priv_data, "tune", "zerolatency", 0);
