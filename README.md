@@ -1,5 +1,5 @@
-# Video and audio streaming for Copiosus
-Your personal, low cost, video and audio streaming infrastructure.
+# Video streaming for Copiosus
+Your personal, low cost, ultra low latency (< 300ms) video streaming infrastructure.
 
 Run this code on a single-board computer (SBC) on your local network and display the video and audio stream in the Copiosus app.
 
