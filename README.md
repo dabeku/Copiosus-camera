@@ -1,7 +1,7 @@
-# Video streaming for Copiosus
+# Video streaming for Copiosus viewer
 Your personal, low cost, ultra low latency (250ms) video streaming infrastructure.
 
-Run this code on a single-board computer (SBC) on your local network and display the video and audio stream in the Copiosus app.
+Run this code on a single-board computer (SBC) on your local network and display the video and audio stream in the Copiosus viewer.
 
 Use it as baby phone, surveillance of your property, etc.
 
