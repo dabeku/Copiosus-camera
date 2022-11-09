@@ -27,6 +27,8 @@
 
 #include <SDL2/SDL_thread.h>
 
+#include <libavcodec/bsf.h>
+
 #include "cop_network.h"
 #include "cop_status_code.h"
 #include "cop_utility.h"
@@ -69,10 +71,10 @@ SDL_Thread *video_thread = NULL;
 // Set by main() args
 char* pCamName = NULL;
 AVFormatContext *pCamFormatCtx = NULL;
-AVInputFormat *pCamInputFormat = NULL;
+const AVInputFormat *pCamInputFormat = NULL;
 AVDictionary *pCamOpt = NULL;
 AVCodecContext *pCamCodecCtx = NULL;
-AVCodec *pCamCodec = NULL;
+const AVCodec *pCamCodec = NULL;
 AVPacket camPacket;
 AVFrame *pCamFrame = NULL;
 int camVideoStreamIndex = -1;
@@ -82,7 +84,7 @@ AVFrame *newpicture = NULL;
 // Set by main() args
 char* pMicName = NULL;
 AVFormatContext *pMicFormatCtx = NULL;
-AVInputFormat *pMicInputFormat = NULL;
+const AVInputFormat *pMicInputFormat = NULL;
 AVDictionary *pMicOpt = NULL;
 AVCodecContext *pMicCodecCtx = NULL;
 AVCodec *pMicCodec = NULL;
@@ -146,6 +148,14 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
            pkt->stream_index);
 }
 */
+
+static void get_packet_defaults(AVPacket *pkt) {
+    memset(pkt, 0, sizeof(*pkt));
+    pkt->pts             = AV_NOPTS_VALUE;
+    pkt->dts             = AV_NOPTS_VALUE;
+    pkt->pos             = -1;
+}
+
 
 void intHandler(int dummy) {
     cop_debug("[intHandler] Closing app.");
@@ -219,7 +229,7 @@ static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AV
 }
 
 // Add an output stream
-static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, enum AVCodecID codec_id) {
+static int add_stream(OutputStream *ost, AVFormatContext *oc, const AVCodec **codec, enum AVCodecID codec_id) {
     AVCodecContext *c = NULL;
     int i;
 
@@ -233,7 +243,7 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
     } else {
         *codec = avcodec_find_encoder(codec_id);
     }
-    
+
     if (!(*codec)) {
         cop_error("[add_stream] Could not find encoder for '%s'.", avcodec_get_name(codec_id));
         return STATUS_CODE_NOK;
@@ -277,16 +287,16 @@ static int add_stream(OutputStream *ost, AVFormatContext *oc, AVCodec **codec, e
                     c->sample_rate = 44100;
             }
         }
-        c->channels       = av_get_channel_layout_nb_channels(c->channel_layout);
-        c->channel_layout = AV_CH_LAYOUT_STEREO;
-        if ((*codec)->channel_layouts) {
+        //c->channels = c->ch_layout.nb_channels;
+        c->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
+        /*if ((*codec)->channel_layouts) {
             c->channel_layout = (*codec)->channel_layouts[0];
-            for (i = 0; (*codec)->channel_layouts[i]; i++) {
-                if ((*codec)->channel_layouts[i] == AV_CH_LAYOUT_STEREO)
-                    c->channel_layout = AV_CH_LAYOUT_STEREO;
+            for (i = 0; (*codec)->ch_layouts[i]; i++) {
+                if ((*codec)->ch_layouts[i] == (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO)
+                    c->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
             }
-        }
-        c->channels        = av_get_channel_layout_nb_channels(c->channel_layout);
+        }*/
+        //c->ch_layout.nb_channels        = c->ch_layout.nb_channels;
         ost->st->time_base = (AVRational){ 1, c->sample_rate };
         break;
 
@@ -342,7 +352,7 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt, uint64_t chann
     }
 
     frame->format = sample_fmt;
-    frame->channel_layout = channel_layout;
+    frame->ch_layout.nb_channels = channel_layout;
     frame->sample_rate = sample_rate;
     frame->nb_samples = nb_samples;
 
@@ -357,7 +367,7 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt, uint64_t chann
     return frame;
 }
 
-static int open_audio(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg) {
+static int open_audio(AVFormatContext *oc, const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg) {
     
     AVCodecContext *c;
     int ret;
@@ -375,7 +385,7 @@ static int open_audio(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AV
         return STATUS_CODE_NOK;
     }
 
-    ost->frame     = alloc_audio_frame(c->sample_fmt, c->channel_layout,
+    ost->frame     = alloc_audio_frame(c->sample_fmt, c->ch_layout.nb_channels,
                                        c->sample_rate, c->frame_size);
 
     // Copy the stream parameters to the muxer
@@ -437,7 +447,7 @@ static AVFrame *get_audio_frame(OutputStream *ost) {
 
                     // 2 = channels of dest
                     // 1152 = frame_size of dest
-                    int nb_channels = av_get_channel_layout_nb_channels(ost->enc->channel_layout);
+                    int nb_channels = ost->enc->ch_layout.nb_channels;
                     int nb_samples = final_frame->nb_samples;
                     if (outSamples < nb_channels * nb_samples) {
                         // We don't have enough samples yet. Continue reading frames.
@@ -497,7 +507,6 @@ static AVFrame *get_video_frame(OutputStream *ost) {
             }
         }
     }
-    // TODO: Check why this is not called when disconnecting client
     cop_debug("[get_video_frame] Done.");
     return NULL;
 }
@@ -509,7 +518,7 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost) {
     int ret;
     int got_packet;
 
-    av_init_packet(&pkt);
+    get_packet_defaults(&pkt);
     c = ost->enc;
 
     frame = get_audio_frame(ost);
@@ -546,11 +555,6 @@ static void logStats() {
     }
 }
 
-/*Uint32 periodic_cb(Uint32 interval, void *param) {
-    logStats();
-    return(interval);
-}*/
-
 static int64_t prevPts = 0;
 
 static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
@@ -565,12 +569,17 @@ static int write_video_frame(AVFormatContext *oc, OutputStream *ost) {
     
     c = ost->enc;
     frame = get_video_frame(ost);
-    av_init_packet(&pkt);
+    if (frame == NULL) {
+        cop_debug("[write_video_frame] No frame available. Stop.");
+        // Happens when disconnecting client
+        return 0;
+    }
+    get_packet_defaults(&pkt);
 
     // Calculate pts based on current time. 1000000 is for usec
     int64_t now = av_gettime();
     const AVRational codecTimebase = c->time_base;
-    int64_t rescaledNow = av_rescale_q( now, (AVRational){1, 1000000},codecTimebase);
+    int64_t rescaledNow = av_rescale_q(now, (AVRational){1, 1000000}, codecTimebase);
     frame->pts = rescaledNow; 
 
     // Encode the image
@@ -651,7 +660,7 @@ static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
     return picture;
 }
 
-static int open_video(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg) {
+static int open_video(AVFormatContext *oc, const AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg) {
     
     int ret;
     AVCodecContext *c = ost->enc;
@@ -733,19 +742,7 @@ void sender_stop(char* stop_ip) {
     SDL_WaitThread(audio_thread, &threadReturnValue);
     cop_debug("[sender_stop] Stop thread: %d.", threadReturnValue);
 
-    /*cop_debug("[sender_stop] Detach video thread");
-    SDL_DetachThread(video_thread);
-    cop_debug("[sender_stop] Detach audio thread");
-    SDL_DetachThread(audio_thread);*/
-
     cop_debug("[sender_stop] Write trailer.");
-
-    /* Write the trailer, if any. The trailer must be written before you
-     * close the CodecContexts open when you wrote the header; otherwise
-     * av_write_trailer() may try to use memory that was freed on
-     * av_codec_close().*/
-    av_write_trailer(output_context_cam);
-    av_write_trailer(output_context_mic);
 
     if (have_video) {
         cop_debug("[sender_stop] Close video stream.");
@@ -787,10 +784,10 @@ int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
 
     Container *container = NULL;
     
-    AVOutputFormat *output_format_cam = NULL;
-    AVOutputFormat *output_format_mic = NULL;
-    AVCodec *audio_codec;
-    AVCodec *video_codec;
+    const AVOutputFormat *output_format_cam = NULL;
+    const AVOutputFormat *output_format_mic = NULL;
+    const AVCodec *audio_codec;
+    const AVCodec *video_codec;
     int ret;
     have_video = 0;
     have_audio = 0;
@@ -977,7 +974,7 @@ int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
         }
         
         cop_debug("[sender_initialize] Calling avcodec_find_decoder().");
-        pMicCodec = avcodec_find_decoder(pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
+        const AVCodec *pMicCodec = avcodec_find_decoder(pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
         if (pMicCodec==NULL) {
             cop_error("[sender_initialize] Codec %d not found.", pMicFormatCtx->streams[camAudioStreamIndex]->codecpar->codec_id);
             changeStateInclIp(0, start_ip);
@@ -1018,7 +1015,7 @@ int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
         int nb_samples = audio_st->enc->frame_size;
         
         final_frame = av_frame_alloc();
-        final_frame->channel_layout = dst_channel_layout;
+        final_frame->ch_layout.nb_channels = dst_channel_layout;
         final_frame->sample_rate = dst_sample_rate;
         final_frame->format = dst_sample_fmt;
         final_frame->nb_samples = nb_samples;
@@ -1039,14 +1036,14 @@ int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
             return STATUS_CODE_NOK;
         }
 
-        cop_debug("[sender_initialize] Channel layout: %lu, Sample rate: %d, Sample format: %d", pMicCodecCtx->channel_layout, pMicCodecCtx->sample_rate, pMicCodecCtx->sample_fmt);
+        cop_debug("[sender_initialize] Channel layout: %lu, Sample rate: %d, Sample format: %d", pMicCodecCtx->ch_layout.nb_channels, pMicCodecCtx->sample_rate, pMicCodecCtx->sample_fmt);
         
         // AUDIO: Input
         // Channel layout: 3 = STEREO (LEFT | RIGHT)
         // Sample rate: 44100
         // Sample format: 3 = AV_SAMPLE_FMT_FLT
         av_opt_set_int(swr_ctx, "in_channel_count",     2, 0);
-        av_opt_set_int(swr_ctx, "in_channel_layout",    pMicCodecCtx->channel_layout, 0);
+        av_opt_set_int(swr_ctx, "in_channel_layout",    pMicCodecCtx->ch_layout.nb_channels, 0);
         av_opt_set_int(swr_ctx, "in_sample_rate",       pMicCodecCtx->sample_rate, 0);
         av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", pMicCodecCtx->sample_fmt, 0);
         av_opt_set_int(swr_ctx, "out_channel_layout",    dst_channel_layout, 0);
@@ -1148,7 +1145,7 @@ void list_devices() {
         AVFormatContext *pFormatCtx = avformat_alloc_context();
         AVDictionary* options = NULL;
         av_dict_set(&options,"list_devices","true",0);
-        AVInputFormat *iformat = av_find_input_format("avfoundation");
+        const AVInputFormat *iformat = av_find_input_format("avfoundation");
         cop_debug("=== avfoundation device list ===.");
         avformat_open_input(&pFormatCtx,"",iformat,&options);
         avformat_close_input(&pFormatCtx);
@@ -1158,7 +1155,7 @@ void list_devices() {
         AVDictionary* options = NULL;
         av_dict_set(&options,"list_devices","true",0);
         // TODO: Maybe try video4linux
-        AVInputFormat *iformat = av_find_input_format("video4linux2");
+        const AVInputFormat *iformat = av_find_input_format("video4linux2");
         cop_debug("=== video4linux device list ===.");
         avformat_open_input(&pFormatCtx,"",iformat,&options);
         avformat_close_input(&pFormatCtx);
@@ -1168,7 +1165,7 @@ void list_devices() {
         AVDictionary* options = NULL;
         av_dict_set(&options,"list_devices","true",0);
         // TODO: Maybe try dshow
-        AVInputFormat *iformat = av_find_input_format("vfwcap");
+        const AVInputFormat *iformat = av_find_input_format("vfwcap");
         cop_debug("=== video4linux device list ===.");
         avformat_open_input(&pFormatCtx,"",iformat,&options);
         avformat_close_input(&pFormatCtx);

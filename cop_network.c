@@ -698,6 +698,7 @@ static void tcp_return_status(int client_socket, const char* senderId) {
     FILE* temp_file = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
     if (temp_file == NULL) {
         cop_error("[tcp_return_status] Temperature not available.");
+        return;
     }
     fscanf(temp_file, "%d", &temp_in_milli_degrees);
     fclose(temp_file);
