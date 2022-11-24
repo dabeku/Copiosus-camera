@@ -36,6 +36,11 @@
 #define USE_PROXY 1
 #define TEST_LOCAL 0
 
+// 1080p30, 720p60 and 640 × 480p60/90 (rpi camera v1)
+// 1080p47, 1640 × 1232p41 and 640 × 480p206 (rpi camera v2)
+// 720p = 1280 x 720 (Macbook pro webcam)
+// 1080p = 1920 x 1080
+
 #define CFG_WIDTH 640
 #define CFG_HEIGHT 480
 #define CFG_FRAME_RATE 30
@@ -888,7 +893,7 @@ int sender_initialize(char* url_cam, char* url_mic, char* start_ip) {
         
         ret = avformat_open_input(&pCamFormatCtx, pCamName, pCamInputFormat, &pCamOpt);
         if (ret != 0) {
-            cop_error("[sender_initialize] Camera: Can't open format: %d.", ret);
+            cop_error("[sender_initialize] Camera: Can't open format: %d. Error: %s", ret, av_err2str(ret));
             changeStateInclIp(0, start_ip);
             return STATUS_CODE_NOK;
         }
